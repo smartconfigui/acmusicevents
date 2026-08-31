@@ -38,9 +38,12 @@ Orders sayfasına `pending` olarak düşürür.
 - **Yeni etkinlik:** Events'e 1 satır + Tiers'a kademeleri ekle. Kod değişikliği yok.
 - **Dışarıdan satış:** Tiers'ta `sold_elsewhere` sayısını artır — kontenjan düşer.
 - **Kademe kapatma:** `cap`'i `sold_elsewhere`'e eşitle (kalan 0 olur).
-- **Kapı listesi:** `WEB_APP_URL?action=door&key=DOOR_KEY` — isim ara, "Check in"e bas.
-  Bilet QR'ı okutulunca çıkan sayfa durumu gösterir (✅ / ⚠️ zaten girdi / ⛔ geçersiz)
-  ama işaretlemez; işaretleme kapı listesinden yapılır.
+- **Kapı / check-in:** `https://acmusicevents.com/checkin/` — şifre: `1453`
+  (Code.gs'te `DOOR_PASS`; girildikten sonra o telefonda 4 saat geçerli).
+  Sayfa içi kamerayla QR okutulur, geçerli bilet otomatik check-in olur
+  (✅ isim + adet / ⚠️ zaten girdi / ⏳ ödeme onaysız / ⛔ geçersiz).
+  "List" sekmesi etkinlik bazlı isim listesi: ara, tıkla, check-in.
+  Misafir kendi QR linkini açarsa sadece bilet durumunu görür, işaretleyemez.
 - **Süre aşımı:** 24 saatten eski `pending` siparişler otomatik `expired` olur,
   kontenjan geri açılır.
 
@@ -48,7 +51,7 @@ Orders sayfasına `pending` olarak düşürür.
 
 - Script'te değişiklik yaptıktan sonra **Deploy → Manage deployments → Edit →
   New version → Deploy** demeden canlıya yansımaz.
-- Gizli anahtarlar (HMAC_KEY, DOOR_KEY) Script Properties'te durur; Sheet'te ve
-  sitede görünmez.
+- Bilet QR imza anahtarı (HMAC_KEY) Script Properties'te durur; Sheet'te ve
+  sitede görünmez. Kapı şifresi (`DOOR_PASS`) Code.gs'in başında tanımlı.
 - Gmail günlük mail kotası (consumer ~100/gün, Workspace daha yüksek) bu ölçek
   için fazlasıyla yeterli.

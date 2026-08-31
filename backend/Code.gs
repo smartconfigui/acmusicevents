@@ -19,6 +19,8 @@
 
 var TZ = 'America/Los_Angeles';
 var PENDING_TTL_HOURS = 24;
+var CHECKIN_URL = 'https://acmusicevents.com/checkin/'; // bilet QR'ının açtığı sayfa
+var DOOR_PASS = '1453'; // kapı/check-in sayfası şifresi (statik)
 
 var EVENTS_HEADERS = ['event_id', 'title', 'date_time', 'venue', 'capacity', 'status', 'poster_url'];
 var TIERS_HEADERS  = ['event_id', 'tier_id', 'tier_name', 'price', 'cap', 'sold_elsewhere'];
@@ -53,10 +55,9 @@ function setup() {
     tiers.appendRow(['sf-neck-sep19', 'final', 'Final Presale',     47.32, '', 0]);
   }
 
-  // Gizli anahtarlar (bir kez üretilir)
+  // Gizli anahtar (bir kez üretilir; bilet QR imzası için)
   var props = PropertiesService.getScriptProperties();
   if (!props.getProperty('HMAC_KEY')) props.setProperty('HMAC_KEY', Utilities.getUuid() + Utilities.getUuid());
-  if (!props.getProperty('DOOR_KEY')) props.setProperty('DOOR_KEY', Utilities.getUuid().replace(/-/g, '').slice(0, 20));
 
   // Tetikleyiciler (mükerrer kurulumu önle)
   var have = {};
@@ -64,9 +65,7 @@ function setup() {
   if (!have['onOrderEdit']) ScriptApp.newTrigger('onOrderEdit').forSpreadsheet(ss).onEdit().create();
   if (!have['expirePending']) ScriptApp.newTrigger('expirePending').timeBased().everyHours(1).create();
 
-  Logger.log('Kurulum tamam.');
-  Logger.log('DOOR_KEY (kapı listesi anahtarı): ' + props.getProperty('DOOR_KEY'));
-  Logger.log('Kapı listesi: <WEB_APP_URL>?action=door&key=' + props.getProperty('DOOR_KEY'));
+  Logger.log('Kurulum tamam. Check-in sayfası: ' + CHECKIN_URL + ' (şifre: ' + DOOR_PASS + ')');
 }
 
 function ensureSheet_(ss, name, headers) {
@@ -86,6 +85,11 @@ function doGet(e) {
   try {
     if (a === 'events')  return json_({ ok: true, events: getEvents_() });
     if (a === 'status')  return json_(getStatus_(p.code, p.email));
+    // JSON uçları — checkin sayfası (acmusicevents.com/checkin/) bunları kullanır
+    if (a === 'verify')  return json_(verify_(p.code, p.sig));
+    if (a === 'mark')    return json_(mark_(p.key, p.code, p.sig, p.order));
+    if (a === 'list')    return json_(listOrders_(p.key));
+    // Eski HTML görünümleri (yedek)
     if (a === 'scan')    return scanPage_(p.code, p.sig);
     if (a === 'door')    return doorPage_(p.key, p.q);
     if (a === 'checkin') return doorCheckin_(p.key, p.order);
@@ -250,7 +254,8 @@ function sendTicket_(o) {
   var ev = rows_('Events').filter(function (r) { return String(r[0]) === String(o[2]); })[0] || [];
   var code = String(o[9]);
   var sig = hmac_(code);
-  var scanUrl = ScriptApp.getService().getUrl() + '?action=scan&code=' + encodeURIComponent(code) + '&sig=' + sig;
+  // QR kendi domain'imizi açar — Google hesap bağlamına girmez
+  var scanUrl = CHECKIN_URL + '?c=' + encodeURIComponent(code + '.' + sig);
   var qrImg = 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=' + encodeURIComponent(scanUrl);
 
   var html =
@@ -301,7 +306,70 @@ function expirePending() {
 /* ============================== KAPI GÖRÜNÜMÜ ============================== */
 
 function doorOk_(key) {
-  return key && key === PropertiesService.getScriptProperties().getProperty('DOOR_KEY');
+  return key && String(key) === DOOR_PASS;
+}
+
+function orderInfo_(r) {
+  return { ok: true, status: String(r[10]), name: String(r[5]), qty: Number(r[7]),
+           tier_name: String(r[4]), code: String(r[9]), checked_in_at: String(r[12] || '') };
+}
+
+/** Bilet doğrulama (işaretlemez). code + hmac imzası gerekir. */
+function verify_(code, sig) {
+  if (!code || !sig || hmac_(String(code).trim().toUpperCase()) !== String(sig)) {
+    return { ok: false, error: 'invalid' };
+  }
+  var o = findOrder_(code);
+  if (!o) return { ok: false, error: 'not_found' };
+  return orderInfo_(o.row);
+}
+
+/** Check-in işareti. key şart; bilet ya code+sig ile ya da order id ile bulunur.
+ *  result: checked_in | already | not_confirmed */
+function mark_(key, code, sig, orderId) {
+  if (!doorOk_(key)) return { ok: false, error: 'denied' };
+  var found = null;
+  if (orderId) {
+    var data = rows_('Orders');
+    for (var i = 0; i < data.length; i++) {
+      if (String(data[i][0]) === String(orderId)) { found = { row: data[i], sheetRow: i + 2 }; break; }
+    }
+  } else {
+    if (!code || !sig || hmac_(String(code).trim().toUpperCase()) !== String(sig)) {
+      return { ok: false, error: 'invalid' };
+    }
+    found = findOrder_(code);
+  }
+  if (!found) return { ok: false, error: 'not_found' };
+
+  var info = orderInfo_(found.row);
+  var st = String(found.row[10]);
+  if (st === 'checked_in') { info.result = 'already'; return info; }
+  if (st !== 'confirmed')  { info.result = 'not_confirmed'; return info; }
+
+  var sh = SpreadsheetApp.getActive().getSheetByName('Orders');
+  var now = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
+  sh.getRange(found.sheetRow, 11).setValue('checked_in');
+  sh.getRange(found.sheetRow, 13).setValue(now);
+  info.status = 'checked_in'; info.checked_in_at = now; info.result = 'checked_in';
+  return info;
+}
+
+/** Kapı listesi verisi (confirmed + checked_in), etkinlik adıyla birlikte. */
+function listOrders_(key) {
+  if (!doorOk_(key)) return { ok: false, error: 'denied' };
+  var titles = {};
+  rows_('Events').forEach(function (r) {
+    titles[String(r[0])] = String(r[1]) + ' · ' + dateStr_(r[2]).slice(0, 10);
+  });
+  var orders = rows_('Orders')
+    .filter(function (r) { var s = String(r[10]); return s === 'confirmed' || s === 'checked_in'; })
+    .map(function (r) {
+      return { order_id: r[0], event: titles[String(r[2])] || String(r[2]),
+               name: String(r[5]), qty: Number(r[7]), tier_name: String(r[4]),
+               code: String(r[9]), status: String(r[10]), checked_in_at: String(r[12] || '') };
+    });
+  return { ok: true, orders: orders };
 }
 
 function scanPage_(code, sig) {
