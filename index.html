@@ -2663,7 +2663,8 @@ function renderBuyForm() {
 let qty = 1;
 let selectedTierIdx = 0;
 function curTier() { return tiersOf(currentEvent)[selectedTierIdx]; }
-function maxQty() { return Math.min(tierLeft(curTier()), 8); }
+// Kademe açıkken (left>0) tek sipariş kalanın 4 üzerine kadar çıkabilir (bilinçli oversell).
+function maxQty() { return Math.min(tierLeft(curTier()) + 4, 8); }
 function updateTotal() { $('#total').textContent = fmtMoney(qty * curTier().price); }
 function selectTier(i) {
   selectedTierIdx = i;

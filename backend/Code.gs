@@ -21,6 +21,7 @@ var TZ = 'America/Los_Angeles';
 var PENDING_TTL_HOURS = 24;
 var CHECKIN_URL = 'https://acmusicevents.com/checkin/'; // bilet QR'ının açtığı sayfa
 var DOOR_PASS = '1453'; // kapı/check-in sayfası şifresi (statik)
+var OVERSELL_MAX = 4;   // tek sipariş, kademe kalanının en fazla bu kadar üzerine çıkabilir
 
 var EVENTS_HEADERS = ['event_id', 'title', 'date_time', 'venue', 'capacity', 'status', 'poster_url'];
 var TIERS_HEADERS  = ['event_id', 'tier_id', 'tier_name', 'price', 'cap', 'sold_elsewhere'];
@@ -192,7 +193,10 @@ function createOrder_(b) {
   lock.waitLock(10000);
   try {
     var left = tierLeftMap_()[b.event_id + '|' + b.tier];
-    if (left !== null && qty > left) return { ok: false, error: 'sold_out', left: left };
+    // Kademe tamamen kapanmadıysa, kalanın OVERSELL_MAX üzerine kadar satışa izin ver.
+    if (left !== null && (left <= 0 || qty > left + OVERSELL_MAX)) {
+      return { ok: false, error: 'sold_out', left: left };
+    }
 
     var orders = SpreadsheetApp.getActive().getSheetByName('Orders');
     var n = orders.getLastRow(); // başlık dahil -> ilk sipariş no 101
