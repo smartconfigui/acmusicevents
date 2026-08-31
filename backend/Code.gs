@@ -1,0 +1,377 @@
+/**
+ * AC Music Events — Ticketing backend (Google Apps Script)
+ *
+ * Kurulum: backend/README.md
+ * Sheet yapısı: Events, Tiers, Orders (setup() otomatik kurar)
+ *
+ * Uçlar (web app deploy sonrası):
+ *   GET  ?action=events                     -> aktif etkinlikler + kademe kontenjanları (JSON)
+ *   POST {action:'order', ...}              -> sipariş kaydı (pending) + referans kodu
+ *   GET  ?action=status&code=X&email=Y      -> "biletim nerede?" sorgusu
+ *   GET  ?action=scan&code=X&sig=Y          -> bilet QR doğrulama sayfası (işaretlemez)
+ *   GET  ?action=door&key=DOOR_KEY          -> kapı listesi (isim ara + check-in)
+ *   GET  ?action=checkin&key=K&order=N      -> siparişi checked_in yap
+ *
+ * Onay akışı: Orders sayfasında status hücresini "confirmed" yapınca
+ * QR'lı bilet maili otomatik gider (kurulumda eklenen onEdit tetikleyicisi).
+ * 24 saatten eski pending siparişler saatlik tetikleyiciyle "expired" olur.
+ */
+
+var TZ = 'America/Los_Angeles';
+var PENDING_TTL_HOURS = 24;
+
+var EVENTS_HEADERS = ['event_id', 'title', 'date_time', 'venue', 'capacity', 'status', 'poster_url'];
+var TIERS_HEADERS  = ['event_id', 'tier_id', 'tier_name', 'price', 'cap', 'sold_elsewhere'];
+var ORDERS_HEADERS = ['order_id', 'created_at', 'event_id', 'tier_id', 'tier_name', 'name', 'email',
+                      'qty', 'amount_due', 'ref_code', 'status', 'confirmed_at', 'checked_in_at', 'notes'];
+var ORDER_STATUSES = ['pending', 'confirmed', 'checked_in', 'expired', 'cancelled'];
+
+/* ============================== KURULUM ============================== */
+
+/** Bir kez elle çalıştır: sayfaları kurar, YAZZ etkinliğini tohumlar,
+ *  gizli anahtarları üretir, tetikleyicileri ekler. Tekrar çalıştırmak güvenlidir. */
+function setup() {
+  var ss = SpreadsheetApp.getActive();
+
+  var events = ensureSheet_(ss, 'Events', EVENTS_HEADERS);
+  var tiers  = ensureSheet_(ss, 'Tiers', TIERS_HEADERS);
+  var orders = ensureSheet_(ss, 'Orders', ORDERS_HEADERS);
+
+  // date_time kolonunu düz metin yap (Sheets'in tarihe çevirmesini engelle)
+  events.getRange('C:C').setNumberFormat('@');
+
+  // Orders.status için açılır menü
+  var rule = SpreadsheetApp.newDataValidation().requireValueInList(ORDER_STATUSES, true).build();
+  orders.getRange(2, 11, orders.getMaxRows() - 1, 1).setDataValidation(rule);
+
+  // YAZZ etkinliğini tohumla (Events boşsa)
+  if (events.getLastRow() < 2) {
+    events.appendRow(['sf-neck-sep19', 'YAZZ', '2026-09-19 20:00',
+                      'Neck of the Woods · San Francisco', 100, 'active', '']);
+    tiers.appendRow(['sf-neck-sep19', 'early', 'Early Bird',        30.33, 20, 20]);
+    tiers.appendRow(['sf-neck-sep19', 'ga',    'General Admission', 35.99, 80, 0]);
+    tiers.appendRow(['sf-neck-sep19', 'final', 'Final Presale',     47.32, '', 0]);
+  }
+
+  // Gizli anahtarlar (bir kez üretilir)
+  var props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('HMAC_KEY')) props.setProperty('HMAC_KEY', Utilities.getUuid() + Utilities.getUuid());
+  if (!props.getProperty('DOOR_KEY')) props.setProperty('DOOR_KEY', Utilities.getUuid().replace(/-/g, '').slice(0, 20));
+
+  // Tetikleyiciler (mükerrer kurulumu önle)
+  var have = {};
+  ScriptApp.getProjectTriggers().forEach(function (t) { have[t.getHandlerFunction()] = true; });
+  if (!have['onOrderEdit']) ScriptApp.newTrigger('onOrderEdit').forSpreadsheet(ss).onEdit().create();
+  if (!have['expirePending']) ScriptApp.newTrigger('expirePending').timeBased().everyHours(1).create();
+
+  Logger.log('Kurulum tamam.');
+  Logger.log('DOOR_KEY (kapı listesi anahtarı): ' + props.getProperty('DOOR_KEY'));
+  Logger.log('Kapı listesi: <WEB_APP_URL>?action=door&key=' + props.getProperty('DOOR_KEY'));
+}
+
+function ensureSheet_(ss, name, headers) {
+  var sh = ss.getSheetByName(name) || ss.insertSheet(name);
+  if (sh.getLastRow() < 1 || sh.getRange(1, 1).getValue() !== headers[0]) {
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/* ============================== HTTP UÇLARI ============================== */
+
+function doGet(e) {
+  var p = (e && e.parameter) || {};
+  var a = String(p.action || '').toLowerCase();
+  try {
+    if (a === 'events')  return json_({ ok: true, events: getEvents_() });
+    if (a === 'status')  return json_(getStatus_(p.code, p.email));
+    if (a === 'scan')    return scanPage_(p.code, p.sig);
+    if (a === 'door')    return doorPage_(p.key, p.q);
+    if (a === 'checkin') return doorCheckin_(p.key, p.order);
+    return json_({ ok: false, error: 'unknown action' });
+  } catch (err) {
+    return json_({ ok: false, error: String(err) });
+  }
+}
+
+function doPost(e) {
+  var body = {};
+  try { body = JSON.parse(e.postData.contents); } catch (err) {}
+  try {
+    if (String(body.action || '') === 'order') return json_(createOrder_(body));
+    return json_({ ok: false, error: 'unknown action' });
+  } catch (err) {
+    return json_({ ok: false, error: String(err) });
+  }
+}
+
+function json_(o) {
+  return ContentService.createTextOutput(JSON.stringify(o))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/* ============================== VERİ OKUMA ============================== */
+
+function rows_(name) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(name);
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
+}
+
+function dateStr_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, TZ, 'yyyy-MM-dd HH:mm');
+  return String(v);
+}
+
+/** Kademe başına kalan = cap - sold_elsewhere - (pending+confirmed+checked_in sipariş adetleri).
+ *  cap boş = limitsiz (left: null). */
+function tierLeftMap_() {
+  var used = {}; // "event|tier" -> adet
+  rows_('Orders').forEach(function (r) {
+    var st = String(r[10]);
+    if (st === 'pending' || st === 'confirmed' || st === 'checked_in') {
+      var k = r[2] + '|' + r[3];
+      used[k] = (used[k] || 0) + Number(r[7] || 0);
+    }
+  });
+  var map = {};
+  rows_('Tiers').forEach(function (r) {
+    var k = r[0] + '|' + r[1];
+    var cap = r[4];
+    if (cap === '' || cap === null) { map[k] = null; return; } // limitsiz
+    map[k] = Math.max(0, Number(cap) - Number(r[5] || 0) - (used[k] || 0));
+  });
+  return map;
+}
+
+function getEvents_() {
+  var leftMap = tierLeftMap_();
+  var tiersByEvent = {};
+  rows_('Tiers').forEach(function (r) {
+    (tiersByEvent[r[0]] = tiersByEvent[r[0]] || []).push({
+      id: String(r[1]), name: String(r[2]), price: Number(r[3]),
+      left: leftMap[r[0] + '|' + r[1]],
+    });
+  });
+  return rows_('Events')
+    .filter(function (r) { return String(r[5]) === 'active'; })
+    .map(function (r) {
+      return {
+        event_id: String(r[0]), title: String(r[1]), date_time: dateStr_(r[2]),
+        venue: String(r[3]), capacity: Number(r[4] || 0),
+        status: 'active', poster_url: String(r[6] || ''),
+        tiers: tiersByEvent[r[0]] || [],
+      };
+    });
+}
+
+/* ============================== SİPARİŞ ============================== */
+
+function createOrder_(b) {
+  var name = String(b.name || '').trim().slice(0, 80);
+  var email = String(b.email || '').trim().slice(0, 120);
+  var qty = Math.max(1, Math.min(8, parseInt(b.qty, 10) || 0));
+  if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { ok: false, error: 'invalid name/email' };
+
+  var ev = rows_('Events').filter(function (r) {
+    return String(r[0]) === String(b.event_id) && String(r[5]) === 'active';
+  })[0];
+  if (!ev) return { ok: false, error: 'event not found' };
+
+  var tier = rows_('Tiers').filter(function (r) {
+    return String(r[0]) === String(b.event_id) && String(r[1]) === String(b.tier);
+  })[0];
+  if (!tier) return { ok: false, error: 'tier not found' };
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var left = tierLeftMap_()[b.event_id + '|' + b.tier];
+    if (left !== null && qty > left) return { ok: false, error: 'sold_out', left: left };
+
+    var orders = SpreadsheetApp.getActive().getSheetByName('Orders');
+    var n = orders.getLastRow(); // başlık dahil -> ilk sipariş no 101
+    var prefix = String(ev[1]).replace(/[^A-Za-z]/g, '').slice(0, 4).toUpperCase() || 'ACME';
+    var ref = prefix + '-' + (100 + n);
+    var amount = (qty * Number(tier[3])).toFixed(2);
+    var now = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
+
+    orders.appendRow([n, now, String(b.event_id), String(tier[1]), String(tier[2]),
+                      name, email, qty, amount, ref, 'pending', '', '', '']);
+    return { ok: true, ref_code: ref, amount_due: amount };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getStatus_(code, email) {
+  var r = findOrder_(code);
+  if (!r || String(r.row[6]).toLowerCase() !== String(email || '').trim().toLowerCase()) {
+    return { ok: false, error: 'not found' };
+  }
+  return { ok: true, status: String(r.row[10]), qty: Number(r.row[7]),
+           tier_name: String(r.row[4]), event_id: String(r.row[2]) };
+}
+
+function findOrder_(refCode) {
+  var all = rows_('Orders');
+  for (var i = 0; i < all.length; i++) {
+    if (String(all[i][9]) === String(refCode || '').trim().toUpperCase()) {
+      return { row: all[i], sheetRow: i + 2 };
+    }
+  }
+  return null;
+}
+
+/* ============================== ONAY & BİLET MAİLİ ============================== */
+
+/** Kurulumun eklediği installable onEdit tetikleyicisi. */
+function onOrderEdit(e) {
+  if (!e || !e.range) return;
+  var sh = e.range.getSheet();
+  if (sh.getName() !== 'Orders' || e.range.getColumn() !== 11) return; // K = status
+  var row = e.range.getRow();
+  if (row < 2 || String(e.range.getValue()) !== 'confirmed') return;
+
+  var data = sh.getRange(row, 1, 1, ORDERS_HEADERS.length).getValues()[0];
+  if (data[11]) return; // confirmed_at doluysa mail zaten gitti
+  sendTicket_(data);
+  sh.getRange(row, 12).setValue(Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss'));
+}
+
+function hmac_(text) {
+  var key = PropertiesService.getScriptProperties().getProperty('HMAC_KEY');
+  var raw = Utilities.computeHmacSha256Signature(text, key);
+  return raw.map(function (b) { return ('0' + (b & 0xFF).toString(16)).slice(-2); }).join('').slice(0, 16);
+}
+
+function sendTicket_(o) {
+  var ev = rows_('Events').filter(function (r) { return String(r[0]) === String(o[2]); })[0] || [];
+  var code = String(o[9]);
+  var sig = hmac_(code);
+  var scanUrl = ScriptApp.getService().getUrl() + '?action=scan&code=' + encodeURIComponent(code) + '&sig=' + sig;
+  var qrImg = 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=' + encodeURIComponent(scanUrl);
+
+  var html =
+    '<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;color:#1B2033">' +
+    '<h2 style="margin:0 0 4px">🎟️ ' + esc_(String(ev[1] || '')) + '</h2>' +
+    '<p style="margin:0 0 16px;color:#5B6377">' + esc_(dateStr_(ev[2])) + ' — ' + esc_(String(ev[3] || '')) + '</p>' +
+    '<table style="border:1px solid #DDE1EE;border-collapse:collapse;width:100%">' +
+    trow_('Name', o[5]) + trow_('Tickets', o[7] + ' × ' + o[4]) +
+    trow_('Paid', '$' + o[8]) + trow_('Code', code) +
+    '</table>' +
+    '<p style="text-align:center;margin:20px 0"><img src="' + qrImg + '" width="280" height="280" alt="Ticket QR"></p>' +
+    '<p style="color:#5B6377">Show this QR (or your name) at the door. See you there!</p>' +
+    '</div>';
+
+  MailApp.sendEmail({
+    to: String(o[6]),
+    subject: 'Your tickets — ' + ev[1] + ' · ' + dateStr_(ev[2]),
+    htmlBody: html,
+    name: 'AC Music Events',
+  });
+}
+
+function trow_(k, v) {
+  return '<tr><td style="padding:8px 12px;border:1px solid #DDE1EE;color:#5B6377">' + esc_(String(k)) +
+         '</td><td style="padding:8px 12px;border:1px solid #DDE1EE;font-weight:bold">' + esc_(String(v)) + '</td></tr>';
+}
+
+function esc_(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+/* ============================== SÜRE AŞIMI ============================== */
+
+function expirePending() {
+  var sh = SpreadsheetApp.getActive().getSheetByName('Orders');
+  if (!sh || sh.getLastRow() < 2) return;
+  var cutoff = Date.now() - PENDING_TTL_HOURS * 3600 * 1000;
+  var data = sh.getRange(2, 1, sh.getLastRow() - 1, ORDERS_HEADERS.length).getValues();
+  data.forEach(function (r, i) {
+    if (String(r[10]) === 'pending' && new Date(String(r[1]).replace(' ', 'T')).getTime() < cutoff) {
+      sh.getRange(i + 2, 11).setValue('expired');
+    }
+  });
+}
+
+/* ============================== KAPI GÖRÜNÜMÜ ============================== */
+
+function doorOk_(key) {
+  return key && key === PropertiesService.getScriptProperties().getProperty('DOOR_KEY');
+}
+
+function scanPage_(code, sig) {
+  var valid = code && sig && hmac_(String(code)) === String(sig);
+  var o = valid ? findOrder_(code) : null;
+  var st = o ? String(o.row[10]) : '';
+  var color = '#B3261E', icon = '⛔', msg = 'Invalid ticket';
+  if (o && st === 'confirmed')      { color = '#1C8A4C'; icon = '✅'; msg = o.row[7] + ' ticket(s) — ' + o.row[5]; }
+  else if (o && st === 'checked_in'){ color = '#8A5A00'; icon = '⚠️'; msg = 'Already checked in (' + o.row[12] + ')'; }
+  else if (o && st === 'pending')   { color = '#8A5A00'; icon = '⚠️'; msg = 'Payment not confirmed yet'; }
+  else if (o)                       { msg = 'Ticket ' + st; }
+  return HtmlService.createHtmlOutput(
+    '<body style="font-family:Arial;background:#0E1120;color:#fff;text-align:center;padding:60px 20px">' +
+    '<div style="font-size:72px">' + icon + '</div>' +
+    '<h2 style="color:' + color + '">' + esc_(msg) + '</h2>' +
+    (o ? '<p style="color:#9AA1BD">' + esc_(String(o.row[9])) + ' · ' + esc_(String(o.row[4])) + '</p>' : '') +
+    '</body>').setTitle('Ticket check');
+}
+
+function doorPage_(key, q) {
+  if (!doorOk_(key)) return HtmlService.createHtmlOutput('<h3>Access denied</h3>');
+  var base = ScriptApp.getService().getUrl();
+  var query = String(q || '').toLowerCase();
+  var rowsHtml = rows_('Orders')
+    .filter(function (r) {
+      var st = String(r[10]);
+      if (st !== 'confirmed' && st !== 'checked_in') return false;
+      return !query || String(r[5]).toLowerCase().indexOf(query) >= 0 ||
+             String(r[9]).toLowerCase().indexOf(query) >= 0;
+    })
+    .map(function (r) {
+      var inYet = String(r[10]) === 'checked_in';
+      return '<tr>' +
+        '<td style="padding:10px;border-bottom:1px solid #2A3050">' + esc_(String(r[5])) +
+        '<br><span style="color:#9AA1BD;font-size:12px">' + esc_(String(r[9])) + ' · ' + r[7] + ' × ' + esc_(String(r[4])) + '</span></td>' +
+        '<td style="padding:10px;border-bottom:1px solid #2A3050;text-align:right">' +
+        (inYet
+          ? '<span style="color:#8A5A00">✔ girdi ' + esc_(String(r[12]).slice(11, 16)) + '</span>'
+          : '<a style="background:#5B6CFF;color:#fff;padding:8px 14px;text-decoration:none;border-radius:6px" href="' +
+            base + '?action=checkin&key=' + encodeURIComponent(key) + '&order=' + r[0] + '">Check in</a>') +
+        '</td></tr>';
+    }).join('');
+  return HtmlService.createHtmlOutput(
+    '<body style="font-family:Arial;background:#0E1120;color:#fff;margin:0;padding:16px">' +
+    '<h2 style="margin:4px 0 12px">🚪 Door list</h2>' +
+    '<form method="get" action="' + base + '" style="margin-bottom:12px">' +
+    '<input type="hidden" name="action" value="door"><input type="hidden" name="key" value="' + esc_(key) + '">' +
+    '<input name="q" value="' + esc_(String(q || '')) + '" placeholder="İsim veya kod ara" ' +
+    'style="width:70%;padding:10px;border-radius:6px;border:1px solid #2A3050;background:#161A2E;color:#fff">' +
+    '<button style="padding:10px 16px;border-radius:6px;border:0;background:#5B6CFF;color:#fff">Ara</button></form>' +
+    '<table style="width:100%;border-collapse:collapse">' + (rowsHtml || '<tr><td style="color:#9AA1BD;padding:10px">Kayıt yok</td></tr>') + '</table>' +
+    '</body>').setTitle('Door list');
+}
+
+function doorCheckin_(key, orderId) {
+  if (!doorOk_(key)) return HtmlService.createHtmlOutput('<h3>Access denied</h3>');
+  var sh = SpreadsheetApp.getActive().getSheetByName('Orders');
+  var data = rows_('Orders');
+  for (var i = 0; i < data.length; i++) {
+    if (String(data[i][0]) === String(orderId)) {
+      if (String(data[i][10]) === 'confirmed') {
+        sh.getRange(i + 2, 11).setValue('checked_in');
+        sh.getRange(i + 2, 13).setValue(Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss'));
+      }
+      break;
+    }
+  }
+  // listeye geri dön
+  var base = ScriptApp.getService().getUrl();
+  return HtmlService.createHtmlOutput(
+    '<script>window.top.location="' + base + '?action=door&key=' + encodeURIComponent(key) + '";</script>' +
+    '<a href="' + base + '?action=door&key=' + encodeURIComponent(key) + '">Listeye dön</a>');
+}
