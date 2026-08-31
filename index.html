@@ -48,7 +48,7 @@
 <!-- ======= CONFIG: the only lines to edit at launch ======= -->
 <script>
 const CONFIG = {
-  API_URL: '',                       // Apps Script web app URL; empty = orders not saved yet
+  API_URL: 'https://script.google.com/macros/s/AKfycbzK6PqIBRO-IAPjDVTgUmLqsvRhiSFnqni9o77PxZyUekdFy4EHHVXwKFmHUxlt7nPp_g/exec',
   VENMO_HANDLE: 'acmusicevents',     // Venmo business profile handle
   VENMO_READY: true,                 // false = payment step hidden, email reservation shown instead
   CONTACT_EMAIL: 'info@acmusicevents.com',
@@ -2774,15 +2774,20 @@ $('#buy-overlay').addEventListener('click', closeBuy);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeBuy(); });
 
 async function loadEvents() {
-  if (!CONFIG.API_URL) { EVENTS = DEMO_EVENTS; render(EVENTS); return; }
+  // Önce gömülü verilerle çiz (Apps Script soğuk başlangıcı 1-2 sn sürebilir),
+  // API cevap verirse Sheet'teki güncel veriyle yeniden çiz. API ulaşılamazsa
+  // gömülü veri yedek olarak kalır.
+  EVENTS = DEMO_EVENTS;
+  render(EVENTS);
+  if (!CONFIG.API_URL) return;
   try {
     const r = await fetch(CONFIG.API_URL + '?action=events');
     const data = await r.json();
-    EVENTS = data.events;
-  } catch (e) {
-    EVENTS = [];
-  }
-  render(EVENTS);
+    if (data.ok && Array.isArray(data.events) && data.events.length) {
+      EVENTS = data.events;
+      render(EVENTS);
+    }
+  } catch (e) { /* yedek gömülü veri ekranda kalır */ }
 }
 loadEvents();
 </script>
