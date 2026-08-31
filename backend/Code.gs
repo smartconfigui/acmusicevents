@@ -21,7 +21,7 @@ var TZ = 'America/Los_Angeles';
 var PENDING_TTL_HOURS = 24;
 var CHECKIN_URL = 'https://acmusicevents.com/checkin/'; // bilet QR'ının açtığı sayfa
 var DOOR_PASS = '1453'; // kapı/check-in sayfası şifresi (statik)
-var OVERSELL_MAX = 4;   // tek sipariş, kademe kalanının en fazla bu kadar üzerine çıkabilir
+var OVERSELL_MAX = 3;   // tek sipariş, kademe kalanının en fazla bu kadar üzerine çıkabilir
 
 var EVENTS_HEADERS = ['event_id', 'title', 'date_time', 'venue', 'capacity', 'status', 'poster_url'];
 var TIERS_HEADERS  = ['event_id', 'tier_id', 'tier_name', 'price', 'cap', 'sold_elsewhere'];
