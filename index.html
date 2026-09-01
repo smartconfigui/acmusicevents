@@ -2718,6 +2718,9 @@ function showPanel() {
 }
 
 function openBuy(id) {
+  // Panel açılır açılmaz kart formunu arka planda ısıt: kullanıcı adını/mailini
+  // yazarken Square SDK'sı ve iframe varlıkları hazırlanmış olur.
+  preWarmCard();
   // Canlı kontenjan henüz gelmediyse formu açma: spinner göster, veri gelince devam et.
   if (dataState === 'loading') {
     pendingBuyId = id;
@@ -3159,7 +3162,6 @@ async function loadEvents() {
   render(EVENTS);
   hideSplash();
   if (pendingBuyId) { const id = pendingBuyId; pendingBuyId = null; openBuy(id); }
-  setTimeout(preWarmCard, 600); // kart formunu arka planda hazırla
 }
 
 /* Splash en az 600ms görünür, veri gelince yumuşak kapanır; 9 sn'de her koşulda kalkar. */
