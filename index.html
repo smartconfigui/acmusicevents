@@ -2807,11 +2807,8 @@ function renderBuyForm() {
       </div>
       ${(CARD_OK || tiersOf(ev).some(t => t.square)) ? `
       <div class="grid grid-cols-2 gap-3">
-        <div class="flex flex-col gap-1">
-          <button type="submit" value="venmo" class="w-full bg-neon text-night display text-lg uppercase py-3.5 shadow-neon hover:bg-neonsoft">${VENMO_ICON}Pay with Venmo</button>
-          <p class="font-mono text-[10px] uppercase tracking-[.2em] text-glow text-center">⚡ Fastest</p>
-        </div>
-        <button type="submit" value="card" class="border border-neon text-neonsoft display text-lg uppercase py-3.5 self-start w-full hover:bg-neon hover:text-night">💳 Pay with Card</button>
+        <button type="submit" value="venmo" class="bg-neon text-night display text-lg uppercase py-3.5 shadow-neon hover:bg-neonsoft">${VENMO_ICON}Pay with Venmo</button>
+        <button type="submit" value="card" class="border border-neon text-neonsoft display text-lg uppercase py-3.5 hover:bg-neon hover:text-night">💳 Pay with Card</button>
       </div>` : `
       <button type="submit" value="venmo" class="bg-neon text-night display text-xl uppercase py-3.5 shadow-neon hover:bg-neonsoft">${VENMO_ICON}Pay with Venmo</button>`}
       <p class="text-dim text-xs leading-relaxed">Your ticket arrives by email once your payment is confirmed — usually within a few hours.</p>
