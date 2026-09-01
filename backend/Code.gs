@@ -84,7 +84,15 @@ function doGet(e) {
   var p = (e && e.parameter) || {};
   var a = String(p.action || '').toLowerCase();
   try {
-    if (a === 'events')  return json_({ ok: true, card: cardReady_(), events: getEvents_() });
+    if (a === 'events') {
+      // 60 sn'lik cevap önbelleği: Sheet okumalarını atlayıp hızlı döner.
+      var cache = CacheService.getScriptCache();
+      var hit = cache.get('events_v1');
+      if (hit) return ContentService.createTextOutput(hit).setMimeType(ContentService.MimeType.JSON);
+      var payload = JSON.stringify({ ok: true, card: cardReady_(), events: getEvents_() });
+      cache.put('events_v1', payload, 60);
+      return ContentService.createTextOutput(payload).setMimeType(ContentService.MimeType.JSON);
+    }
     if (a === 'status')  return json_(getStatus_(p.code, p.email));
     // JSON uçları — checkin sayfası (acmusicevents.com/checkin/) bunları kullanır
     if (a === 'verify')  return json_(verify_(p.code, p.sig));
@@ -209,6 +217,7 @@ function createOrder_(b) {
 
     orders.appendRow([n, now, String(b.event_id), String(tier[1]), String(tier[2]),
                       name, email, qty, amount, ref, 'pending', '', '', '']);
+    CacheService.getScriptCache().remove('events_v1'); // kontenjan değişti, önbelleği tazele
     var cardUrl = squarePayLink_(ref, String(ev[1]) + ' — ' + qty + '× ' + String(tier[2]),
                                  Math.round(qty * Number(tier[3]) * 100));
     return { ok: true, ref_code: ref, amount_due: amount, pay_card_url: cardUrl };

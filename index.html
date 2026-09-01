@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AC Music Events</title>
+<link rel="preconnect" href="https://script.google.com">
+<link rel="dns-prefetch" href="https://script.google.com">
 <link rel="icon" type="image/png" href="assets/favicon.png">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="description" content="Live music nights in the SF Bay Area. Tickets, dates, and venues.">
@@ -79,6 +81,7 @@ const CONFIG = {
   VENMO_READY: true,                 // false = payment step hidden, email reservation shown instead
   CONTACT_EMAIL: 'info@acmusicevents.com',
   INSTAGRAM: 'https://instagram.com/acmusicevents',
+  SPLASH: false, // açılış logo ekranı (şimdilik kapalı; true yapınca geri gelir)
 };
 </script>
 
@@ -87,6 +90,7 @@ const CONFIG = {
   <img src="assets/logo-white.png" alt=""
        onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'brandfont splash-word',textContent:'AC MUSIC&EVENTS'}))">
 </div>
+<script>if (!CONFIG.SPLASH) { var _s = document.getElementById('splash'); if (_s) _s.remove(); }</script>
 
 <!-- top bar -->
 <header class="sticky top-0 z-40 bg-night/90 backdrop-blur border-b border-line">
@@ -2957,8 +2961,19 @@ let CARD_OK = false; // backend'de Square kuruluysa true gelir -> "Pay with Card
 
 async function loadEvents() {
   if (!CONFIG.API_URL) { EVENTS = DEMO_EVENTS; dataState = 'fallback'; render(EVENTS); hideSplash(); return; }
-  // API cevabı gelene kadar iskelet + spinner; başarısız olursa gömülü yedek veri.
-  renderLoading();
+  // Son başarılı verinin yerel kopyası varsa ANINDA onu çiz (tekrar ziyaretlerde
+  // sıfır bekleme); taze veri arkada gelince sessizce güncellenir.
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem('acme_events') || 'null'); } catch (e) {}
+  if (cached && Array.isArray(cached.events) && cached.events.length) {
+    EVENTS = cached.events;
+    CARD_OK = !!cached.card;
+    dataState = 'live';
+    render(EVENTS);
+    hideSplash();
+  } else {
+    renderLoading(); // ilk ziyaret: iskelet + spinner
+  }
   $('#sync').textContent = '· syncing availability…';
   try {
     const r = await Promise.race([
@@ -2970,13 +2985,13 @@ async function loadEvents() {
       EVENTS = data.events;
       CARD_OK = !!data.card;
       dataState = 'live';
-    } else {
+      try { localStorage.setItem('acme_events', JSON.stringify({ card: !!data.card, events: data.events, t: Date.now() })); } catch (e) {}
+    } else if (!cached) {
       EVENTS = DEMO_EVENTS;
       dataState = 'fallback';
     }
   } catch (e) {
-    EVENTS = DEMO_EVENTS;
-    dataState = 'fallback';
+    if (!cached) { EVENTS = DEMO_EVENTS; dataState = 'fallback'; }
   }
   $('#sync').textContent = '';
   render(EVENTS);
