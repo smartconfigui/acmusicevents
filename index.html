@@ -2574,6 +2574,9 @@ function priceLabel(ev) {
 }
 // Satış dış sitedeyse (ticket_url dolu) buton yeni sekmede o siteyi açar,
 // bizimkindeyse satın alma panelini.
+// Venmo "V" logosu (buton içinde metin rengini alır)
+const VENMO_ICON = '<svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true" style="display:inline-block;vertical-align:-2px;margin-right:7px"><path d="M19.591 2.146c.808 1.343 1.171 2.723 1.171 4.471 0 5.572-4.759 12.812-8.622 17.893H4.06L.522 3.376l7.724-.734 1.87 15.05c1.748-2.849 3.904-7.324 3.904-10.376 0-1.671-.286-2.809-.734-3.746l6.305-1.424z"/></svg>';
+
 function buyCta(ev, cls) {
   const u = String(ev.ticket_url || '').trim();
   if (u) return `<a href="${esc(u)}" target="_blank" rel="noopener" class="inline-block text-center ${cls}">Get tickets ↗</a>`;
@@ -2760,10 +2763,10 @@ function renderBuyForm() {
       </div>
       ${(CARD_OK || tiersOf(ev).some(t => t.square)) ? `
       <div class="grid grid-cols-2 gap-3">
-        <button type="submit" value="venmo" class="bg-neon text-night display text-lg uppercase py-3.5 shadow-neon hover:bg-neonsoft">Pay with Venmo</button>
+        <button type="submit" value="venmo" class="bg-neon text-night display text-lg uppercase py-3.5 shadow-neon hover:bg-neonsoft">${VENMO_ICON}Pay with Venmo</button>
         <button type="submit" value="card" class="border border-neon text-neonsoft display text-lg uppercase py-3.5 hover:bg-neon hover:text-night">💳 Pay with Card</button>
       </div>` : `
-      <button type="submit" value="venmo" class="bg-neon text-night display text-xl uppercase py-3.5 shadow-neon hover:bg-neonsoft">Pay with Venmo</button>`}
+      <button type="submit" value="venmo" class="bg-neon text-night display text-xl uppercase py-3.5 shadow-neon hover:bg-neonsoft">${VENMO_ICON}Pay with Venmo</button>`}
       <p class="text-dim text-xs leading-relaxed">Your ticket arrives by email once your payment is confirmed — usually within a few hours.</p>
     </form>`;
   $('#order-form').addEventListener('submit', submitOrder);
