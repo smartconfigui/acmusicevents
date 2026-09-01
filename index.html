@@ -50,6 +50,9 @@
   .poster-spin { position:absolute; top:calc(50% - 15px); left:calc(50% - 15px); width:30px; height:30px;
                  border:3px solid rgba(255,255,255,.25); border-top-color:#EDF0FA; border-radius:50%;
                  animation:spin .8s linear infinite; }
+  /* arşivde afiş yokken gradient üstünde beyaz AC ikonu */
+  .poster-mark { position:absolute; top:50%; left:50%; transform:translate(-50%, -50%);
+                 width:42%; max-width:110px; height:auto; opacity:.85; }
   /* açılış splash'ı: veri gelene kadar logo */
   #splash { position:fixed; inset:0; z-index:100; background:#070A16;
             display:flex; align-items:center; justify-content:center;
@@ -2640,7 +2643,9 @@ function renderPast(list) {
     const p = fmtParts(parseDT(ev.date_time));
     return `
     <div class="border border-line opacity-70 hover:opacity-100 transition-opacity">
-      <div class="relative aspect-[4/5] grayscale" style="${posterStyle(ev)}" ${posterAttr(ev)}></div>
+      <div class="relative aspect-[4/5] grayscale" style="${posterStyle(ev)}" ${posterAttr(ev)}>
+        <img src="assets/logo-mark-white.png" alt="" class="poster-label poster-mark" onerror="this.remove()">
+      </div>
       <div class="p-3">
         <p class="font-mono text-[11px] uppercase tracking-[.18em] text-dim">${p.mon} ${p.day} · ${p.year}</p>
         <p class="display text-lg uppercase leading-tight mt-1">${esc(ev.title)}</p>
