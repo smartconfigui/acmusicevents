@@ -23,7 +23,7 @@ var CHECKIN_URL = 'https://acmusicevents.com/checkin/'; // bilet QR'ının açt�
 var DOOR_PASS = '1453'; // kapı/check-in sayfası şifresi (statik)
 var OVERSELL_MAX = 3;   // tek sipariş, kademe kalanının en fazla bu kadar üzerine çıkabilir
 
-var EVENTS_HEADERS = ['event_id', 'title', 'date_time', 'venue', 'capacity', 'status', 'poster_url'];
+var EVENTS_HEADERS = ['event_id', 'title', 'date_time', 'venue', 'capacity', 'status', 'poster_url', 'ticket_url'];
 var TIERS_HEADERS  = ['event_id', 'tier_id', 'tier_name', 'price', 'cap', 'sold_elsewhere'];
 var ORDERS_HEADERS = ['order_id', 'created_at', 'event_id', 'tier_id', 'tier_name', 'name', 'email',
                       'qty', 'amount_due', 'ref_code', 'status', 'confirmed_at', 'checked_in_at', 'notes'];
@@ -166,6 +166,7 @@ function getEvents_() {
         event_id: String(r[0]), title: String(r[1]), date_time: dateStr_(r[2]),
         venue: String(r[3]), capacity: Number(r[4] || 0),
         status: 'active', poster_url: String(r[6] || ''),
+        ticket_url: String(r[7] || ''), // doluysa satış dış sitede: buton oraya link olur
         tiers: tiersByEvent[r[0]] || [],
       };
     });

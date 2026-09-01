@@ -2550,7 +2550,16 @@ function fmtMoney(n) { return '$' + (Number.isInteger(n) ? n : n.toFixed(2)); }
 function priceLabel(ev) {
   const ts = availTiers(ev).length ? availTiers(ev) : tiersOf(ev);
   const min = Math.min(...ts.map(t => t.price));
+  if (!isFinite(min)) return ''; // dış biletli etkinlikte fiyat bilgisi olmayabilir
   return tiersOf(ev).length > 1 ? 'From ' + fmtMoney(min) : fmtMoney(min);
+}
+// Satış dış sitedeyse (ticket_url dolu) buton yeni sekmede o siteyi açar,
+// bizimkindeyse satın alma panelini.
+function buyCta(ev, cls) {
+  const u = String(ev.ticket_url || '').trim();
+  return u
+    ? `<a href="${esc(u)}" target="_blank" rel="noopener" class="inline-block text-center ${cls}">Get tickets ↗</a>`
+    : `<button data-buy="${esc(ev.event_id)}" class="${cls}">Get tickets</button>`;
 }
 
 function renderHero(ev) {
@@ -2572,7 +2581,7 @@ function renderHero(ev) {
       <div class="mt-8 flex items-center gap-5">
         ${out
           ? `<span class="font-mono text-sm uppercase tracking-[.2em] border border-line text-dim px-5 py-3">Sold out</span>`
-          : `<button data-buy="${esc(ev.event_id)}" class="bg-neon text-night display text-xl uppercase px-8 py-3 shadow-neon hover:bg-neonsoft">Get tickets</button>
+          : `${buyCta(ev, 'bg-neon text-night display text-xl uppercase px-8 py-3 shadow-neon hover:bg-neonsoft')}
              <span class="font-mono text-sm text-dim">${priceLabel(ev)}</span>`}
       </div>
     </div>
@@ -2609,7 +2618,7 @@ function renderUpcoming(list) {
             ? `<span class="font-mono text-[11px] uppercase tracking-[.2em] border border-line text-dim px-3 py-1.5">Sold out</span>`
             : `${low ? `<span class="font-mono text-[11px] uppercase tracking-[.2em] text-glow">Few left</span>` : ''}
                <span class="font-mono text-sm text-dim">${priceLabel(ev)}</span>
-               <button data-buy="${esc(ev.event_id)}" class="bg-neon text-night font-mono text-xs font-semibold uppercase tracking-[.15em] px-4 py-2.5 hover:bg-neonsoft hover:shadow-neon">Get tickets</button>`}
+               ${buyCta(ev, 'bg-neon text-night font-mono text-xs font-semibold uppercase tracking-[.15em] px-4 py-2.5 hover:bg-neonsoft hover:shadow-neon')}`}
         </div>
       </div>
     </article>`;
