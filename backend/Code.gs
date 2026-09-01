@@ -506,7 +506,6 @@ function orderInfo_(r) {
   var qty = Number(r[7]);
   var st = String(r[10]);
   var inc = Number(r[14] || 0);
-  if (!inc && st === 'checked_in') inc = qty; // eski ikili kayıtlar: tamamı girdi say
   return { ok: true, order_id: r[0], status: st, name: String(r[5]), qty: qty,
            tier_name: String(r[4]), code: String(r[9]),
            checked_in_at: String(r[12] || ''), in_count: inc };
@@ -572,7 +571,6 @@ function listOrders_(key) {
     .filter(function (r) { var s = String(r[10]); return s === 'confirmed' || s === 'checked_in'; })
     .map(function (r) {
       var inc = Number(r[14] || 0);
-      if (!inc && String(r[10]) === 'checked_in') inc = Number(r[7]);
       return { order_id: r[0], event: titles[String(r[2])] || String(r[2]),
                name: String(r[5]), qty: Number(r[7]), tier_name: String(r[4]),
                code: String(r[9]), status: String(r[10]),

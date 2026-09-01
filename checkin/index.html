@@ -316,7 +316,7 @@ function loadList(force) {
 }
 
 function inCountOf(o) {
-  return o.in_count != null ? o.in_count : (o.status === 'checked_in' ? o.qty : 0);
+  return Number(o.in_count || 0);
 }
 
 function renderList() {
