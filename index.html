@@ -2454,6 +2454,12 @@ const DEMO_EVENTS = [
       { id:'ga',    name:'General Admission', price:35.99, cap:80,   left:80 },
       { id:'final', name:'Final Presale',     price:47.32, cap:null, left:null },
     ] },
+  { event_id:'or-cumhuriyet-oct24', title:'YAZZ',              date_time:'2026-10-24 20:00',
+    venue:'Cumhuriyet Balosu · Oregon',     capacity:0, status:'active', poster_url:'', tiers:[] },
+  { event_id:'sr-sinem-nov21',     title:'Sinem Şen Project', date_time:'2026-11-21 20:00',
+    venue:'San Ramon',                      capacity:0, status:'active', poster_url:'', tiers:[] },
+  { event_id:'pa-sinem-jan09',     title:'Sinem Şen Project', date_time:'2027-01-09 20:00',
+    venue:'Palo Alto',                      capacity:0, status:'active', poster_url:'', tiers:[] },
   { event_id:'mey-sinem-may09',    title:'Sinem Şen Project', date_time:'2026-05-09 20:00',
     venue:'Meyhouse Jazz Club · Sunnyvale', capacity:0, status:'active', poster_url:'', tiers:[] },
   { event_id:'chi-stap-apr04',     title:'YAZZ',              date_time:'2026-04-04 20:00',
@@ -2570,9 +2576,12 @@ function priceLabel(ev) {
 // bizimkindeyse satın alma panelini.
 function buyCta(ev, cls) {
   const u = String(ev.ticket_url || '').trim();
-  return u
-    ? `<a href="${esc(u)}" target="_blank" rel="noopener" class="inline-block text-center ${cls}">Get tickets ↗</a>`
-    : `<button data-buy="${esc(ev.event_id)}" class="${cls}">Get tickets</button>`;
+  if (u) return `<a href="${esc(u)}" target="_blank" rel="noopener" class="inline-block text-center ${cls}">Get tickets ↗</a>`;
+  // Ne dış link ne kademe var: bilet satışı henüz açılmamış (duyuru modu).
+  if (!(ev.tiers && ev.tiers.length)) {
+    return `<span class="font-mono text-[11px] uppercase tracking-[.2em] border border-line text-glow px-4 py-3">Tickets soon</span>`;
+  }
+  return `<button data-buy="${esc(ev.event_id)}" class="${cls}">Get tickets</button>`;
 }
 
 function renderHero(ev) {
