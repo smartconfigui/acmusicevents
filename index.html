@@ -120,7 +120,7 @@ const CONFIG = {
 <!-- past -->
 <section id="past" class="max-w-5xl mx-auto px-4 pb-20">
   <h2 class="font-mono text-xs uppercase tracking-[.25em] text-dim mb-6">Past shows</h2>
-  <div id="past-list" class="grid grid-cols-2 md:grid-cols-5 gap-4"><!-- js --></div>
+  <div id="past-list" class="grid grid-cols-2 md:grid-cols-4 gap-4"><!-- js --></div>
 </section>
 
 <!-- footer -->
@@ -2639,8 +2639,8 @@ function renderUpcoming(list) {
 }
 
 function renderPast(list) {
-  // her zaman yalnızca son 5 şov
-  $('#past-list').innerHTML = list.slice(0, 5).map(ev => {
+  // her zaman yalnızca son 4 şov (masaüstünde tek sıra, mobilde 2x2)
+  $('#past-list').innerHTML = list.slice(0, 4).map(ev => {
     const p = fmtParts(parseDT(ev.date_time));
     return `
     <div class="border border-line opacity-70 hover:opacity-100 transition-opacity">
