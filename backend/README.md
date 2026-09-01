@@ -60,6 +60,13 @@ Orders sayfasına `pending` olarak düşürür.
   (✅ isim + adet / ⚠️ zaten girdi / ⏳ ödeme onaysız / ⛔ geçersiz).
   "List" sekmesi etkinlik bazlı isim listesi: ara, tıkla, check-in.
   Misafir kendi QR linkini açarsa sadece bilet durumunu görür, işaretleyemez.
+- **Venmo otomasyonu (V1.5):** 5 dakikada bir Gmail'deki Venmo makbuzları
+  taranır ("X paid you $Y"); nottaki sipariş kodu + tutar eşleşirse sipariş
+  otomatik `confirmed` olur ve QR bilet maili anında gider (notes kolonuna
+  "venmo-otomatik" düşer). İşlenen mailler Gmail'de `acmusic-otomatik`
+  etiketi alır; kodu okunamayan/eşleşmeyenler `acmusic-manuel-bak` etiketine
+  düşer — arada bir o etikete bak, elle onayla. Tutar farklıysa otomatik
+  onaylanmaz, fark Orders'ın notes kolonuna yazılır.
 - **Süre aşımı:** 24 saatten eski `pending` siparişler otomatik `expired` olur,
   kontenjan geri açılır.
 

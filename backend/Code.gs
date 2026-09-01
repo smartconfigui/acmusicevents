@@ -65,6 +65,7 @@ function setup() {
   ScriptApp.getProjectTriggers().forEach(function (t) { have[t.getHandlerFunction()] = true; });
   if (!have['onOrderEdit']) ScriptApp.newTrigger('onOrderEdit').forSpreadsheet(ss).onEdit().create();
   if (!have['expirePending']) ScriptApp.newTrigger('expirePending').timeBased().everyHours(1).create();
+  if (!have['scanVenmo']) ScriptApp.newTrigger('scanVenmo').timeBased().everyMinutes(5).create();
 
   Logger.log('Kurulum tamam. Check-in sayfası: ' + CHECKIN_URL + ' (şifre: ' + DOOR_PASS + ')');
 }
@@ -405,6 +406,68 @@ function esc_(s) {
   return String(s).replace(/[&<>"']/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
   });
+}
+
+/* ============================== VENMO OTOMASYONU (V1.5) ============================== */
+
+var LBL_AUTO = 'acmusic-otomatik';      // otomatik onaylanan makbuzlar
+var LBL_MANUAL = 'acmusic-manuel-bak';  // kod/eşleşme bulunamayanlar — elle bak
+
+/** 5 dakikada bir çalışır (kurulumdaki tetikleyici): Gmail'deki Venmo
+ *  makbuzlarını tarar, nottaki sipariş kodunu ve tutarı çıkarır, eşleşen
+ *  pending siparişi confirmed yapıp QR bilet mailini gönderir. */
+function scanVenmo() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return;
+  try {
+    var q = 'from:venmo@venmo.com subject:"paid you" newer_than:7d' +
+            ' -label:' + LBL_AUTO + ' -label:' + LBL_MANUAL;
+    var threads = GmailApp.search(q, 0, 20);
+    if (!threads.length) return;
+    var lblAuto = getOrCreateLabel_(LBL_AUTO);
+    var lblManual = getOrCreateLabel_(LBL_MANUAL);
+    var sh = SpreadsheetApp.getActive().getSheetByName('Orders');
+    var handledAny = false;
+
+    threads.forEach(function (th) {
+      var handled = false;
+      var msgs = th.getMessages();
+      for (var i = 0; i < msgs.length && !handled; i++) {
+        var text = msgs[i].getSubject() + '\n' + msgs[i].getPlainBody().slice(0, 3000);
+        var code = (text.match(/\b([A-Z]{2,6}-\d{3,5})\b/) || [])[1];
+        if (!code) continue;
+        var found = findOrder_(code);
+        if (!found) continue;
+        var st = String(found.row[10]);
+        if (st === 'confirmed' || st === 'checked_in') { handled = true; continue; } // zaten onaylı
+        if (st !== 'pending') continue;
+
+        var amt = (text.match(/\$\s?([0-9,]+\.\d{2})/) || [])[1];
+        var due = Number(found.row[8]).toFixed(2);
+        if (amt && Number(amt.replace(/,/g, '')).toFixed(2) !== due) {
+          // Tutar tutmuyor: otomatik onaylama, nota düş, elle bakılsın.
+          sh.getRange(found.sheetRow, 14).setValue('Venmo tutarı farklı: $' + amt + ' (beklenen $' + due + ')');
+          continue;
+        }
+        var now = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
+        sh.getRange(found.sheetRow, 11).setValue('confirmed');
+        sh.getRange(found.sheetRow, 12).setValue(now);
+        sh.getRange(found.sheetRow, 14).setValue('venmo-otomatik');
+        var rowData = sh.getRange(found.sheetRow, 1, 1, ORDERS_HEADERS.length).getValues()[0];
+        try { sendTicket_(rowData); } catch (e) { Logger.log('bilet maili gönderilemedi: ' + e); }
+        handled = true;
+        handledAny = true;
+      }
+      th.addLabel(handled ? lblAuto : lblManual);
+    });
+    if (handledAny) CacheService.getScriptCache().remove('events_v1');
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getOrCreateLabel_(name) {
+  return GmailApp.getUserLabelByName(name) || GmailApp.createLabel(name);
 }
 
 /* ============================== SÜRE AŞIMI ============================== */
