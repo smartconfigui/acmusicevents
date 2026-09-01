@@ -47,6 +47,12 @@ Orders sayfasına `pending` olarak düşürür.
   düşer, onayı yine Orders'tan tick'lersin. Token yoksa kart butonu görünmez,
   Venmo akışı etkilenmez. (Square ücreti ~%2.9 + 30¢; yedek olarak Tiers'ın
   `square_link` kolonuna elle sabit link de koyulabilir.)
+- **Gömülü kart formu (opsiyonel, önerilir):** Script Properties'e bir de
+  `SQUARE_APP_ID` eklersen (developer.squareup.com'da token'ın hemen üstünde,
+  `sq0idp-...` ile başlar) kart formu sitenin İÇİNDE açılır — alıcı siteden
+  ayrılmaz, ödeme başarılı olunca sipariş OTOMATİK confirmed olur ve QR bilet
+  maili anında gider (elle tick gerekmez). Bu property yoksa hazır Square
+  sayfası linki kullanılmaya devam eder.
 - **Kademe kapatma:** `cap`'i `sold_elsewhere`'e eşitle (kalan 0 olur).
 - **Kapı / check-in:** `https://acmusicevents.com/checkin/` — şifre: `1453`
   (Code.gs'te `DOOR_PASS`; girildikten sonra o telefonda 4 saat geçerli).

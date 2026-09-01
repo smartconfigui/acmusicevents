@@ -89,7 +89,7 @@ function doGet(e) {
       var cache = CacheService.getScriptCache();
       var hit = cache.get('events_v1');
       if (hit) return ContentService.createTextOutput(hit).setMimeType(ContentService.MimeType.JSON);
-      var payload = JSON.stringify({ ok: true, card: cardReady_(), events: getEvents_() });
+      var payload = JSON.stringify({ ok: true, card: cardReady_(), sq: sqPublic_(), events: getEvents_() });
       cache.put('events_v1', payload, 60);
       return ContentService.createTextOutput(payload).setMimeType(ContentService.MimeType.JSON);
     }
@@ -113,6 +113,7 @@ function doPost(e) {
   try { body = JSON.parse(e.postData.contents); } catch (err) {}
   try {
     if (String(body.action || '') === 'order') return json_(createOrder_(body));
+    if (String(body.action || '') === 'pay')   return json_(payWithCard_(body));
     return json_({ ok: false, error: 'unknown action' });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
@@ -224,6 +225,55 @@ function createOrder_(b) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Sitedeki gömülü kart formu için gerekli AÇIK kimlikler (gizli değildir). */
+function sqPublic_() {
+  var p = PropertiesService.getScriptProperties();
+  return { app: p.getProperty('SQUARE_APP_ID') || '', loc: p.getProperty('SQUARE_LOCATION_ID') || '' };
+}
+
+/** Gömülü kart formundan gelen token ile ödemeyi çeker; başarılıysa siparişi
+ *  otomatik confirmed yapar ve QR bilet mailini hemen gönderir. */
+function payWithCard_(b) {
+  var found = findOrder_(b.ref_code);
+  if (!found) return { ok: false, error: 'Order not found' };
+  var st = String(found.row[10]);
+  if (st === 'confirmed' || st === 'checked_in') return { ok: true, already: true };
+  if (st !== 'pending') return { ok: false, error: 'Order is ' + st };
+
+  var props = PropertiesService.getScriptProperties();
+  var token = props.getProperty('SQUARE_ACCESS_TOKEN');
+  var loc = props.getProperty('SQUARE_LOCATION_ID');
+  if (!token || !loc) return { ok: false, error: 'Card payments not configured' };
+
+  var resp = UrlFetchApp.fetch('https://connect.squareup.com/v2/payments', {
+    method: 'post', contentType: 'application/json',
+    headers: { 'Authorization': 'Bearer ' + token, 'Square-Version': '2024-06-04' },
+    payload: JSON.stringify({
+      source_id: String(b.token || ''),
+      idempotency_key: String(found.row[9]) + '-' + Date.now(),
+      amount_money: { amount: Math.round(Number(found.row[8]) * 100), currency: 'USD' },
+      location_id: loc,
+      note: String(found.row[9]) + ' — ' + String(found.row[5]),
+      buyer_email_address: String(found.row[6]),
+    }),
+    muteHttpExceptions: true,
+  });
+  var data = JSON.parse(resp.getContentText());
+  if (data.payment && (data.payment.status === 'COMPLETED' || data.payment.status === 'APPROVED')) {
+    var sh = SpreadsheetApp.getActive().getSheetByName('Orders');
+    var now = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
+    sh.getRange(found.sheetRow, 11).setValue('confirmed');
+    sh.getRange(found.sheetRow, 12).setValue(now);
+    var rowData = sh.getRange(found.sheetRow, 1, 1, ORDERS_HEADERS.length).getValues()[0];
+    try { sendTicket_(rowData); } catch (e) { Logger.log('bilet maili gönderilemedi: ' + e); }
+    CacheService.getScriptCache().remove('events_v1');
+    return { ok: true };
+  }
+  Logger.log('Square payment cevabı: ' + resp.getContentText());
+  var err = (data.errors && data.errors[0] && (data.errors[0].detail || data.errors[0].code)) || 'Payment failed';
+  return { ok: false, error: err };
 }
 
 /** Square kurulu mu? (Sitede "Pay with Card" butonunun görünmesini belirler.) */
