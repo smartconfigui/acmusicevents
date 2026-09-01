@@ -50,10 +50,17 @@
   .spinner { width:30px; height:30px; border:3px solid #232A4D; border-top-color:#5B6CFF;
              border-radius:50%; margin:32px auto 0; animation:spin .8s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
-  /* afiş yüklenirken görselin üstünde dönen çark */
-  .poster-spin { position:absolute; top:calc(50% - 15px); left:calc(50% - 15px); width:30px; height:30px;
-                 border:3px solid rgba(255,255,255,.25); border-top-color:#EDF0FA; border-radius:50%;
-                 animation:spin .8s linear infinite; }
+  /* iskelet (lazy-load silüeti): içerik bloklarının şekli + ışık süpürmesi */
+  .sk { background:#161B33; position:relative; overflow:hidden; }
+  .sk::after, .poster-spin::after {
+    content:''; position:absolute; inset:0; transform:translateX(-100%);
+    background:linear-gradient(90deg, transparent, rgba(237,240,250,.07), transparent);
+    animation:shimmer 1.4s ease-in-out infinite;
+  }
+  @keyframes shimmer { 100% { transform:translateX(100%); } }
+  /* afiş yüklenirken gradient'in üstünde shimmer süpürmesi */
+  .poster-spin { position:absolute; inset:0; overflow:hidden; }
+  @media (prefers-reduced-motion: reduce) { .sk::after, .poster-spin::after { animation:none; } }
   /* arşivde afiş yokken gradient üstünde beyaz AC ikonu */
   .poster-mark { position:absolute; top:50%; left:50%; transform:translate(-50%, -50%);
                  width:42%; max-width:110px; height:auto; opacity:.85; }
@@ -2542,21 +2549,29 @@ function render(events) {
   $('#ig-link').href = CONFIG.INSTAGRAM;
 }
 
-/* API cevabı gelene kadar hero ve liste alanlarında iskelet + spinner. */
+/* API cevabı gelene kadar sayfanın silüeti: iskelet bloklar + shimmer. */
+function sk(w, h) { return `<div class="sk" style="width:${w};height:${h}"></div>`; }
 function renderLoading() {
   $('#marquee-track').textContent = ('LIVE MUSIC NIGHTS ★ SF BAY AREA ★ NO BOOKING FEES ★ '.repeat(6));
   $('#hero').innerHTML = `
-    <div>
-      <p class="font-mono text-xs uppercase tracking-[.25em] text-glow mb-4">Next show</p>
-      <div class="spinner"></div>
+    <div class="flex flex-col gap-4">
+      ${sk('110px', '12px')}
+      ${sk('75%', '58px')}
+      ${sk('45%', '15px')}
+      ${sk('60%', '13px')}
+      <div></div>
+      ${sk('190px', '52px')}
     </div>
-    <div class="relative aspect-[4/5] border border-line w-full max-w-xs mx-auto md:max-w-none md:mx-0 bg-panel">
-      <div class="poster-spin"></div>
-    </div>`;
-  $('#upcoming').innerHTML = `
-    <div class="flex items-center justify-center bg-panel border border-line" style="min-height:104px">
-      <div class="spinner" style="margin:0"></div>
-    </div>`;
+    <div class="sk aspect-[4/5] w-full max-w-xs mx-auto md:max-w-none md:mx-0"></div>`;
+  $('#upcoming').innerHTML = [0, 1].map(() => `
+    <div class="flex bg-panel border border-line">
+      <div class="sk shrink-0 w-24 sm:w-28" style="height:128px"></div>
+      <div class="flex-1 p-4 sm:px-6 flex flex-col gap-3 justify-center">
+        ${sk('45%', '20px')}
+        ${sk('65%', '12px')}
+      </div>
+    </div>`).join('');
+  $('#past-list').innerHTML = [0, 1, 2, 3].map(() => `<div class="sk aspect-[4/5]"></div>`).join('');
   $('#contact-email').href = 'mailto:' + CONFIG.CONTACT_EMAIL;
   $('#contact-email').textContent = CONFIG.CONTACT_EMAIL;
   $('#ig-link').href = CONFIG.INSTAGRAM;
@@ -2696,7 +2711,9 @@ function openBuy(id) {
         </div>
         <button onclick="closeBuy()" aria-label="Close" class="text-dim hover:text-paper text-2xl leading-none px-2">×</button>
       </div>
-      <div class="spinner" role="status" aria-label="Loading"></div>
+      <div class="flex flex-col gap-3" role="status" aria-label="Loading">
+        ${sk('100%', '46px')}${sk('100%', '46px')}${sk('60%', '30px')}${sk('100%', '46px')}
+      </div>
       <p class="text-dim text-sm text-center mt-5">Checking live availability…</p>`;
     showPanel();
     return;
