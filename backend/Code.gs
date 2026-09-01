@@ -84,7 +84,7 @@ function doGet(e) {
   var p = (e && e.parameter) || {};
   var a = String(p.action || '').toLowerCase();
   try {
-    if (a === 'events')  return json_({ ok: true, events: getEvents_() });
+    if (a === 'events')  return json_({ ok: true, card: cardReady_(), events: getEvents_() });
     if (a === 'status')  return json_(getStatus_(p.code, p.email));
     // JSON uçları — checkin sayfası (acmusicevents.com/checkin/) bunları kullanır
     if (a === 'verify')  return json_(verify_(p.code, p.sig));
@@ -215,6 +215,12 @@ function createOrder_(b) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Square kurulu mu? (Sitede "Pay with Card" butonunun görünmesini belirler.) */
+function cardReady_() {
+  var p = PropertiesService.getScriptProperties();
+  return !!(p.getProperty('SQUARE_ACCESS_TOKEN') && p.getProperty('SQUARE_LOCATION_ID'));
 }
 
 /** Sipariş tutarı kadar tek kullanımlık Square ödeme linki üretir.
