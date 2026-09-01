@@ -209,9 +209,43 @@ function createOrder_(b) {
 
     orders.appendRow([n, now, String(b.event_id), String(tier[1]), String(tier[2]),
                       name, email, qty, amount, ref, 'pending', '', '', '']);
-    return { ok: true, ref_code: ref, amount_due: amount };
+    var cardUrl = squarePayLink_(ref, String(ev[1]) + ' — ' + qty + '× ' + String(tier[2]),
+                                 Math.round(qty * Number(tier[3]) * 100));
+    return { ok: true, ref_code: ref, amount_due: amount, pay_card_url: cardUrl };
   } finally {
     lock.releaseLock();
+  }
+}
+
+/** Sipariş tutarı kadar tek kullanımlık Square ödeme linki üretir.
+ *  Script Properties'te SQUARE_ACCESS_TOKEN ve SQUARE_LOCATION_ID yoksa '' döner
+ *  (site o zaman kart butonu göstermez; Venmo akışı etkilenmez). */
+function squarePayLink_(ref, desc, amountCents) {
+  var props = PropertiesService.getScriptProperties();
+  var token = props.getProperty('SQUARE_ACCESS_TOKEN');
+  var loc = props.getProperty('SQUARE_LOCATION_ID');
+  if (!token || !loc || !(amountCents > 0)) return '';
+  try {
+    var resp = UrlFetchApp.fetch('https://connect.squareup.com/v2/online-checkout/payment-links', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'Authorization': 'Bearer ' + token, 'Square-Version': '2024-06-04' },
+      payload: JSON.stringify({
+        idempotency_key: ref + '-' + Date.now(),
+        quick_pay: {
+          name: desc + ' (' + ref + ')',
+          price_money: { amount: amountCents, currency: 'USD' },
+          location_id: loc,
+        },
+        payment_note: ref, // ödeme kaydına sipariş kodu düşer -> eşleştirme
+        checkout_options: { redirect_url: 'https://acmusicevents.com/?paid=1' },
+      }),
+      muteHttpExceptions: true,
+    });
+    var data = JSON.parse(resp.getContentText());
+    return (data.payment_link && data.payment_link.url) || '';
+  } catch (e) {
+    return ''; // Square hata verirse kartsız devam, sipariş etkilenmez
   }
 }
 

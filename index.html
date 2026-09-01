@@ -2849,12 +2849,12 @@ function renderVenmoStep(o) {
     </div>
     <a href="${venmoUrl}" target="_blank" rel="noopener"
        class="block text-center bg-neon text-night display text-xl uppercase py-3.5 mt-5 shadow-neon hover:bg-neonsoft">Open Venmo</a>
-    ${curTier().square ? `
-    <a href="${esc(curTier().square)}" target="_blank" rel="noopener"
-       class="block text-center border border-line text-paper font-mono text-xs font-semibold uppercase tracking-[.15em] py-3 mt-3 hover:border-neon">💳 Or pay with card</a>` : ''}
+    ${(o.pay_card_url || curTier().square) ? `
+    <a href="${esc(o.pay_card_url || curTier().square)}" target="_blank" rel="noopener"
+       class="block text-center border border-line text-paper font-mono text-xs font-semibold uppercase tracking-[.15em] py-3 mt-3 hover:border-neon">💳 Or pay with card${o.pay_card_url ? ' — $' + o.amount_due : ''}</a>` : ''}
     <div class="mt-6 text-dim text-xs leading-relaxed flex flex-col gap-2">
       <p><span class="text-glow font-mono">→</span> The code in the payment note is how we match your payment — the button and QR fill it in for you.</p>
-      ${curTier().square ? `<p><span class="text-glow font-mono">→</span> Paying by card? Set the quantity to <b>${o.qty}</b> and enter your code <b>${esc(o.ref_code)}</b> in the order-code field.</p>` : ''}
+      ${!o.pay_card_url && curTier().square ? `<p><span class="text-glow font-mono">→</span> Paying by card? Set the quantity to <b>${o.qty}</b> and enter your code <b>${esc(o.ref_code)}</b> in the order-code field.</p>` : ''}
       ${o.demo ? `<p><span class="text-glow font-mono">→</span> After you pay, <a href="${orderMail}" class="underline underline-offset-2 text-neonsoft">tap here to email us your order details</a> so your ticket reaches the right inbox.</p>` : ''}
       <p><span class="text-glow font-mono">→</span> Your ticket with a door QR code arrives by email once the payment is confirmed — usually within a few hours.</p>
       <p><span class="text-glow font-mono">→</span> Questions? <a href="mailto:${esc(CONFIG.CONTACT_EMAIL)}" class="underline underline-offset-2 text-neonsoft">${esc(CONFIG.CONTACT_EMAIL)}</a></p>

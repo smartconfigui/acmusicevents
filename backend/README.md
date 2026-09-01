@@ -37,12 +37,16 @@ Orders sayfasına `pending` olarak düşürür.
   `confirmed` yap → QR'lı bilet maili otomatik gider (`confirmed_at` dolar).
 - **Yeni etkinlik:** Events'e 1 satır + Tiers'a kademeleri ekle. Kod değişikliği yok.
 - **Dışarıdan satış:** Tiers'ta `sold_elsewhere` sayısını artır — kontenjan düşer.
-- **Kartla ödeme (Square):** Square Dashboard → Payments → Payment Links →
-  Create link → "Sell an item" → kademe adı + fiyatı gir, **quantity seçimini
-  aç** ve **custom field** olarak "Order code" ekle → linki Tiers'ın
-  `square_link` (G) kolonuna yapıştır. Sitede o kademe için Venmo'nun altında
-  "Pay with card" butonu belirir; alıcı kodunu Square'deki alana yazar,
-  onayı yine Orders'tan tick'lersin. (Square ücreti ~%2.9 + 30¢.)
+- **Kartla ödeme (Square, otomatik tam tutar):** bir kez kurulum —
+  [developer.squareup.com](https://developer.squareup.com) → uygulama oluştur →
+  **Production** sekmesinden Access Token'ı al; Location ID'yi Square Dashboard →
+  Account & Settings → Locations'tan al. Apps Script → Project Settings →
+  **Script Properties**'e ekle: `SQUARE_ACCESS_TOKEN` ve `SQUARE_LOCATION_ID`.
+  O andan itibaren her siparişte site, tam tutarlı tek kullanımlık Square
+  linki üretir ("Pay with card — $71.98"); ödeme notuna sipariş kodu otomatik
+  düşer, onayı yine Orders'tan tick'lersin. Token yoksa kart butonu görünmez,
+  Venmo akışı etkilenmez. (Square ücreti ~%2.9 + 30¢; yedek olarak Tiers'ın
+  `square_link` kolonuna elle sabit link de koyulabilir.)
 - **Kademe kapatma:** `cap`'i `sold_elsewhere`'e eşitle (kalan 0 olur).
 - **Kapı / check-in:** `https://acmusicevents.com/checkin/` — şifre: `1453`
   (Code.gs'te `DOOR_PASS`; girildikten sonra o telefonda 4 saat geçerli).
