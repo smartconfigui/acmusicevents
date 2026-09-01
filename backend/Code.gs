@@ -219,8 +219,10 @@ function createOrder_(b) {
     orders.appendRow([n, now, String(b.event_id), String(tier[1]), String(tier[2]),
                       name, email, qty, amount, ref, 'pending', '', '', '']);
     CacheService.getScriptCache().remove('events_v1'); // kontenjan değişti, önbelleği tazele
-    var cardUrl = squarePayLink_(ref, String(ev[1]) + ' — ' + qty + '× ' + String(tier[2]),
-                                 Math.round(qty * Number(tier[3]) * 100));
+    // Gömülü kart formu kuruluysa (APP_ID var) hosted yedek linki üretme — her siparişten ~1 sn kazandırır.
+    var cardUrl = sqPublic_().app ? '' :
+      squarePayLink_(ref, String(ev[1]) + ' — ' + qty + '× ' + String(tier[2]),
+                     Math.round(qty * Number(tier[3]) * 100));
     return { ok: true, ref_code: ref, amount_due: amount, pay_card_url: cardUrl };
   } finally {
     lock.releaseLock();

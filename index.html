@@ -2851,20 +2851,48 @@ async function submitOrder(e) {
     tier_name: curTier().name,
   };
   const method = (e.submitter && e.submitter.value) || 'venmo';
-  const btns = f.querySelectorAll('[type=submit]');
-  btns.forEach(b => { b.disabled = true; });
+  f.querySelectorAll('[type=submit]').forEach(b => { b.disabled = true; });
+
+  // ANINDA ekran değiştir: kart seçildiyse form hemen kurulmaya başlar,
+  // sipariş kaydı arka planda paralel oluşur (donma hissi yok).
+  const provisional = {
+    ref_code: '', amount_due: (qty * curTier().price).toFixed(2),
+    name: order.name, email: order.email, qty: order.qty, tier_name: order.tier_name,
+  };
+  const inline = method === 'card' && SQ.app && SQ.loc;
+  if (inline) renderInlineCardStep(provisional);
+  else renderOrderPending();
+
   try {
     const res = await (CONFIG.API_URL ? apiCreateOrder(order) : demoCreateOrder(order));
-    // Sunucu cevabına form bilgilerini de ekle (kart/rezervasyon ekranları kullanıyor)
     LAST_ORDER = Object.assign({}, order, res);
-    if (method === 'card' && (LAST_ORDER.pay_card_url || curTier().square)) renderCardStep(LAST_ORDER);
+    if (inline) completeInlineOrder(LAST_ORDER);
+    else if (method === 'card' && (LAST_ORDER.pay_card_url || curTier().square)) renderCardStep(LAST_ORDER);
     else renderVenmoStep(LAST_ORDER);
   } catch (err) {
-    btns.forEach(b => { b.disabled = false; });
+    // Formu geri getir, bilgileri koru
+    renderBuyForm();
+    const n = $('#f-name'), m = $('#f-email');
+    if (n) n.value = order.name;
+    if (m) m.value = order.email;
     alert('Something went wrong creating your order. Please try again, or email us: ' + CONFIG.CONTACT_EMAIL);
   }
 }
 let LAST_ORDER = null;
+
+/* Venmo/hosted yolunda sipariş oluşurken kısa iskelet. */
+function renderOrderPending() {
+  $('#buy-content').innerHTML = `
+    <div class="flex items-start justify-between mb-6">
+      <div>
+        <p class="font-mono text-[11px] uppercase tracking-[.2em] text-glow">Step 2 of 2</p>
+        <h3 id="buy-title" class="display text-3xl uppercase leading-tight mt-1">One sec…</h3>
+      </div>
+      <button onclick="closeBuy()" aria-label="Close" class="text-dim hover:text-paper text-2xl leading-none px-2">×</button>
+    </div>
+    <div class="flex flex-col gap-3">${sk('100%', '96px')}${sk('100%', '46px')}</div>
+    <p class="text-dim text-sm text-center mt-5">Creating your order…</p>`;
+}
 
 async function apiCreateOrder(order) {
   const r = await fetch(CONFIG.API_URL, {
@@ -2997,7 +3025,21 @@ async function preWarmCard() {
   } catch (e) { /* sessiz — tıklama anında normal yol denenir */ }
 }
 
+let inlineCardAttached = false, inlineOrderReady = false;
+function inlineMaybeEnable() {
+  const b = $('#pay-btn');
+  if (b && inlineCardAttached && inlineOrderReady) b.disabled = false;
+}
+function completeInlineOrder(o) {
+  inlineOrderReady = true;
+  const c = $('#ord-code');
+  if (c) c.textContent = o.ref_code;
+  inlineMaybeEnable();
+}
+
 function renderInlineCardStep(o) {
+  inlineCardAttached = false;
+  inlineOrderReady = !!o.ref_code;
   $('#buy-content').innerHTML = `
     <div class="flex items-start justify-between mb-6">
       <div>
@@ -3008,7 +3050,7 @@ function renderInlineCardStep(o) {
     </div>
     <div class="border border-line p-5">
       <div class="flex items-center justify-between">
-        <span class="font-mono text-xs uppercase tracking-[.2em] text-dim">Total · ${esc(o.ref_code)}</span>
+        <span class="font-mono text-xs uppercase tracking-[.2em] text-dim">Total · <span id="ord-code">${o.ref_code ? esc(o.ref_code) : '…'}</span></span>
         <span class="display text-3xl">$${o.amount_due}</span>
       </div>
       <div id="card-el" class="mt-4" style="min-height:48px"></div>
@@ -3019,7 +3061,7 @@ function renderInlineCardStep(o) {
     <div class="mt-6 text-dim text-xs leading-relaxed flex flex-col gap-2">
       <p><span class="text-glow font-mono">→</span> Secure checkout by Square — your card details never touch our servers.</p>
       <p><span class="text-glow font-mono">→</span> Your ticket is emailed <b>instantly</b> after payment.</p>
-      <p><span class="text-glow font-mono">→</span> <button onclick="renderVenmoStep(LAST_ORDER)" class="underline underline-offset-2 text-neonsoft">Prefer Venmo?</button></p>
+      <p><span class="text-glow font-mono">→</span> <button onclick="if (LAST_ORDER && LAST_ORDER.ref_code) renderVenmoStep(LAST_ORDER)" class="underline underline-offset-2 text-neonsoft">Prefer Venmo?</button></p>
     </div>`;
   initInlineCard(o);
 }
@@ -3031,17 +3073,20 @@ async function initInlineCard(o) {
     if (!sqPayments) sqPayments = window.Square.payments(SQ.app, SQ.loc);
     const card = await sqCard();
     await card.attach('#card-el');
-    btn.disabled = false;
+    inlineCardAttached = true;
+    inlineMaybeEnable();
     btn.onclick = async () => {
+      const ord = (LAST_ORDER && LAST_ORDER.ref_code) ? LAST_ORDER : o;
+      if (!ord.ref_code) return;
       btn.disabled = true;
       msg.textContent = 'Processing…';
       try {
         const t = await card.tokenize();
         if (t.status !== 'OK') throw new Error((t.errors && t.errors[0] && t.errors[0].message) || 'Card was not accepted');
-        const r = await fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify({ action: 'pay', ref_code: o.ref_code, token: t.token }) });
+        const r = await fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify({ action: 'pay', ref_code: ord.ref_code, token: t.token }) });
         const d = await r.json();
         if (!d.ok) throw new Error(d.error || 'Payment failed');
-        renderPaidStep(o);
+        renderPaidStep(ord);
       } catch (err) {
         msg.textContent = err.message + ' — please try again.';
         btn.disabled = false;
