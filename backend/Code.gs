@@ -243,10 +243,21 @@ function squarePayLink_(ref, desc, amountCents) {
       muteHttpExceptions: true,
     });
     var data = JSON.parse(resp.getContentText());
-    return (data.payment_link && data.payment_link.url) || '';
+    var url = (data.payment_link && data.payment_link.url) || '';
+    if (!url) Logger.log('Square cevabı: ' + resp.getContentText());
+    return url;
   } catch (e) {
+    Logger.log('Square hatası: ' + e);
     return ''; // Square hata verirse kartsız devam, sipariş etkilenmez
   }
+}
+
+/** Editörden Run et: Square kurulumunu test eder.
+ *  İlk çalıştırmada "dış servise bağlanma" izni ister — Allow de.
+ *  Log'da bir square.link URL'i görüyorsan kurulum tamam demektir. */
+function testSquare() {
+  var url = squarePayLink_('TEST-' + Date.now(), 'Kurulum testi — 1× bilet', 100);
+  Logger.log(url ? ('ÇALIŞIYOR ✓ ' + url) : 'BAŞARISIZ — yukarıdaki Square cevabına bak (token/location?)');
 }
 
 function getStatus_(code, email) {
