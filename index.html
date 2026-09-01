@@ -2963,6 +2963,37 @@ function loadSquareSdk() {
   return sqSdkPromise;
 }
 
+const SQ_CARD_STYLE = {
+  'input': { color: '#EDF0FA', backgroundColor: '#070A16' },
+  'input::placeholder': { color: '#8C93B8' },
+  '.input-container': { borderColor: '#232A4D', borderRadius: '0px' },
+  '.input-container.is-focus': { borderColor: '#FFB347' },
+};
+let sqPayments = null;
+async function sqCard() {
+  try { return await sqPayments.card({ style: SQ_CARD_STYLE }); }
+  catch (e) { return await sqPayments.card(); }
+}
+
+/* Ön ısıtma: sayfa yüklenince SDK + Square bağlantısı + kart iframe varlıkları
+   arka planda hazırlanır; "Pay with Card" tıklandığında form anında gelir. */
+let sqWarmed = false;
+async function preWarmCard() {
+  if (!SQ.app || !SQ.loc || sqWarmed) return;
+  sqWarmed = true;
+  try {
+    await loadSquareSdk();
+    sqPayments = window.Square.payments(SQ.app, SQ.loc);
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:fixed;left:-9999px;top:0;width:300px;';
+    document.body.appendChild(holder);
+    holder.id = 'card-warm';
+    const c = await sqCard();
+    await c.attach('#card-warm');
+    setTimeout(() => { try { c.destroy(); } catch (e) {} holder.remove(); }, 4000);
+  } catch (e) { /* sessiz — tıklama anında normal yol denenir */ }
+}
+
 function renderInlineCardStep(o) {
   $('#buy-content').innerHTML = `
     <div class="flex items-start justify-between mb-6">
@@ -2994,16 +3025,8 @@ async function initInlineCard(o) {
   const btn = $('#pay-btn'), msg = $('#pay-msg');
   try {
     await loadSquareSdk();
-    const payments = window.Square.payments(SQ.app, SQ.loc);
-    let card;
-    try {
-      card = await payments.card({ style: {
-        'input': { color: '#EDF0FA', backgroundColor: '#070A16' },
-        'input::placeholder': { color: '#8C93B8' },
-        '.input-container': { borderColor: '#232A4D', borderRadius: '0px' },
-        '.input-container.is-focus': { borderColor: '#FFB347' },
-      }});
-    } catch (e) { card = await payments.card(); }
+    if (!sqPayments) sqPayments = window.Square.payments(SQ.app, SQ.loc);
+    const card = await sqCard();
     await card.attach('#card-el');
     btn.disabled = false;
     btn.onclick = async () => {
@@ -3136,6 +3159,7 @@ async function loadEvents() {
   render(EVENTS);
   hideSplash();
   if (pendingBuyId) { const id = pendingBuyId; pendingBuyId = null; openBuy(id); }
+  setTimeout(preWarmCard, 600); // kart formunu arka planda hazırla
 }
 
 /* Splash en az 600ms görünür, veri gelince yumuşak kapanır; 9 sn'de her koşulda kalkar. */
