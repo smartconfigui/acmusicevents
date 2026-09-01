@@ -24,7 +24,7 @@ var DOOR_PASS = '1453'; // kapı/check-in sayfası şifresi (statik)
 var OVERSELL_MAX = 3;   // tek sipariş, kademe kalanının en fazla bu kadar üzerine çıkabilir
 
 var EVENTS_HEADERS = ['event_id', 'title', 'date_time', 'venue', 'capacity', 'status', 'poster_url', 'ticket_url'];
-var TIERS_HEADERS  = ['event_id', 'tier_id', 'tier_name', 'price', 'cap', 'sold_elsewhere'];
+var TIERS_HEADERS  = ['event_id', 'tier_id', 'tier_name', 'price', 'cap', 'sold_elsewhere', 'square_link'];
 var ORDERS_HEADERS = ['order_id', 'created_at', 'event_id', 'tier_id', 'tier_name', 'name', 'email',
                       'qty', 'amount_due', 'ref_code', 'status', 'confirmed_at', 'checked_in_at', 'notes'];
 var ORDER_STATUSES = ['pending', 'confirmed', 'checked_in', 'expired', 'cancelled'];
@@ -157,6 +157,7 @@ function getEvents_() {
     (tiersByEvent[r[0]] = tiersByEvent[r[0]] || []).push({
       id: String(r[1]), name: String(r[2]), price: Number(r[3]),
       left: leftMap[r[0] + '|' + r[1]],
+      square: String(r[6] || '').trim(), // Square Payment Link (doluysa kartla ödeme butonu çıkar)
     });
   });
   return rows_('Events')

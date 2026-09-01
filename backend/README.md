@@ -37,6 +37,12 @@ Orders sayfasına `pending` olarak düşürür.
   `confirmed` yap → QR'lı bilet maili otomatik gider (`confirmed_at` dolar).
 - **Yeni etkinlik:** Events'e 1 satır + Tiers'a kademeleri ekle. Kod değişikliği yok.
 - **Dışarıdan satış:** Tiers'ta `sold_elsewhere` sayısını artır — kontenjan düşer.
+- **Kartla ödeme (Square):** Square Dashboard → Payments → Payment Links →
+  Create link → "Sell an item" → kademe adı + fiyatı gir, **quantity seçimini
+  aç** ve **custom field** olarak "Order code" ekle → linki Tiers'ın
+  `square_link` (G) kolonuna yapıştır. Sitede o kademe için Venmo'nun altında
+  "Pay with card" butonu belirir; alıcı kodunu Square'deki alana yazar,
+  onayı yine Orders'tan tick'lersin. (Square ücreti ~%2.9 + 30¢.)
 - **Kademe kapatma:** `cap`'i `sold_elsewhere`'e eşitle (kalan 0 olur).
 - **Kapı / check-in:** `https://acmusicevents.com/checkin/` — şifre: `1453`
   (Code.gs'te `DOOR_PASS`; girildikten sonra o telefonda 4 saat geçerli).
