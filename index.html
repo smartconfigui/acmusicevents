@@ -2811,7 +2811,7 @@ function renderBuyForm() {
         <button type="submit" value="card" class="border border-neon text-neonsoft display text-lg uppercase py-3.5 hover:bg-neon hover:text-night">💳 Pay with Card</button>
       </div>` : `
       <button type="submit" value="venmo" class="bg-neon text-night display text-xl uppercase py-3.5 shadow-neon hover:bg-neonsoft">${VENMO_ICON}Pay with Venmo</button>`}
-      <p class="text-dim text-xs leading-relaxed">Your ticket arrives by email once your payment is confirmed — usually within a few hours.</p>
+      <p class="text-dim text-xs leading-relaxed">Your ticket arrives by email once your payment is confirmed — usually within an hour.</p>
     </form>`;
   $('#order-form').addEventListener('submit', submitOrder);
 }
@@ -2938,7 +2938,7 @@ function renderVenmoStep(o) {
       <p><span class="text-glow font-mono">→</span> The code in the payment note is how we match your payment — the button and QR fill it in for you.</p>
       ${(o.pay_card_url || curTier().square) ? `<p><span class="text-glow font-mono">→</span> <button onclick="renderCardStep(LAST_ORDER)" class="underline underline-offset-2 text-neonsoft">Prefer to pay with card?</button></p>` : ''}
       ${o.demo ? `<p><span class="text-glow font-mono">→</span> After you pay, <a href="${orderMail}" class="underline underline-offset-2 text-neonsoft">tap here to email us your order details</a> so your ticket reaches the right inbox.</p>` : ''}
-      <p><span class="text-glow font-mono">→</span> Your ticket with a door QR code arrives by email once the payment is confirmed — usually within a few hours.</p>
+      <p><span class="text-glow font-mono">→</span> Your ticket with a door QR code arrives by email once the payment is confirmed — usually within an hour.</p>
       <p><span class="text-glow font-mono">→</span> Questions? <a href="mailto:${esc(CONFIG.CONTACT_EMAIL)}" class="underline underline-offset-2 text-neonsoft">${esc(CONFIG.CONTACT_EMAIL)}</a></p>
     </div>`;
   const qr = qrcode(0, 'M');
@@ -2972,7 +2972,7 @@ function renderCardStep(o) {
       ${exact
         ? `<p><span class="text-glow font-mono">→</span> The amount and your order code are already attached — secure checkout by Square.</p>`
         : `<p><span class="text-glow font-mono">→</span> Set the quantity to <b>${o.qty}</b> and enter your code <b>${esc(o.ref_code)}</b> in the order-code field.</p>`}
-      <p><span class="text-glow font-mono">→</span> Your ticket with a door QR code arrives by email once the payment is confirmed — usually within a few hours.</p>
+      <p><span class="text-glow font-mono">→</span> Your ticket with a door QR code arrives by email once the payment is confirmed — usually within an hour.</p>
       <p><span class="text-glow font-mono">→</span> <button onclick="renderVenmoStep(LAST_ORDER)" class="underline underline-offset-2 text-neonsoft">Prefer Venmo?</button></p>
     </div>`;
 }
