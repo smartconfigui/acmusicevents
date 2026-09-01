@@ -2471,8 +2471,7 @@ const $ = (s, el=document) => el.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const parseDT = s => new Date(s.replace(' ', 'T'));
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-const MONTHS = ['January','February','March','April','May','June','July','August',
-                'September','October','November','December'];
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function fmtParts(d) {
   const h = d.getHours(), m = d.getMinutes();
   const time = (h % 12 || 12) + (m ? ':' + String(m).padStart(2,'0') : '') + (h >= 12 ? 'PM' : 'AM');
@@ -2617,11 +2616,11 @@ function renderUpcoming(list) {
     const low = !out && isFinite(left) && ev.capacity && left <= ev.capacity * 0.15;
     return `
     <article class="flex bg-panel border border-line ${out ? 'opacity-60' : ''}">
-      <div class="perf shrink-0 w-24 sm:w-28 p-4 flex flex-col justify-center text-center font-mono">
+      <div class="perf shrink-0 w-24 sm:w-28 px-2 py-3 flex flex-col justify-center text-center font-mono">
         <span class="text-[10px] uppercase tracking-[.1em] text-glow">${p.dow}</span>
-        <span class="display text-3xl leading-none my-1">${p.day}</span>
-        <span class="text-[10px] uppercase tracking-[.1em] text-dim">${p.mon}</span>
-        <span class="text-[10px] uppercase tracking-[.1em] text-dim">${p.time}</span>
+        <span class="display text-5xl leading-none my-1">${p.day}</span>
+        <span class="text-lg uppercase tracking-[.08em] leading-tight">${p.mon}</span>
+        <span class="text-lg uppercase tracking-[.08em] leading-tight text-dim">${p.time}</span>
       </div>
       <div class="flex-1 p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center gap-3">
         <div class="flex-1 min-w-0">
@@ -2650,7 +2649,7 @@ function renderPast(list) {
         <img src="assets/logo-mark-white.png" alt="" class="poster-label poster-mark" onerror="this.remove()">
       </div>
       <div class="p-3">
-        <p class="font-mono text-[10px] uppercase tracking-[.08em] text-dim">${p.mon} ${p.day} · ${p.year}</p>
+        <p class="font-mono text-[11px] uppercase tracking-[.18em] text-dim">${p.mon} ${p.day} · ${p.year}</p>
         <p class="display text-lg uppercase leading-tight mt-1">${esc(ev.title)}</p>
         <p class="text-dim text-xs mt-1 truncate">${esc(ev.venue)}</p>
       </div>
