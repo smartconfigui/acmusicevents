@@ -26,7 +26,8 @@ var OVERSELL_MAX = 3;   // tek sipariş, kademe kalanının en fazla bu kadar ü
 var EVENTS_HEADERS = ['event_id', 'title', 'date_time', 'venue', 'capacity', 'status', 'poster_url', 'ticket_url'];
 var TIERS_HEADERS  = ['event_id', 'tier_id', 'tier_name', 'price', 'cap', 'sold_elsewhere', 'square_link'];
 var ORDERS_HEADERS = ['order_id', 'created_at', 'event_id', 'tier_id', 'tier_name', 'name', 'email',
-                      'qty', 'amount_due', 'ref_code', 'status', 'confirmed_at', 'checked_in_at', 'notes'];
+                      'qty', 'amount_due', 'ref_code', 'status', 'confirmed_at', 'checked_in_at', 'notes',
+                      'checked_in_count'];
 var ORDER_STATUSES = ['pending', 'confirmed', 'checked_in', 'expired', 'cancelled'];
 
 /* ============================== KURULUM ============================== */
@@ -46,6 +47,11 @@ function setup() {
   // Orders.status için açılır menü
   var rule = SpreadsheetApp.newDataValidation().requireValueInList(ORDER_STATUSES, true).build();
   orders.getRange(2, 11, orders.getMaxRows() - 1, 1).setDataValidation(rule);
+
+  // Kısmi check-in kolonu (mevcut sayfalara sonradan eklenir)
+  if (String(orders.getRange(1, 15).getValue()) !== 'checked_in_count') {
+    orders.getRange(1, 15).setValue('checked_in_count').setFontWeight('bold');
+  }
 
   // YAZZ etkinliğini tohumla (Events boşsa)
   if (events.getLastRow() < 2) {
@@ -387,6 +393,12 @@ function sendTicket_(o) {
     '</table>' +
     '<p style="text-align:center;margin:20px 0"><img src="' + qrImg + '" width="280" height="280" alt="Ticket QR"></p>' +
     '<p style="color:#5B6377">Show this QR (or your name) at the door. See you there!</p>' +
+    (Number(o[7]) > 1
+      ? '<p style="color:#5B6377;border:1px solid #DDE1EE;border-radius:8px;padding:10px 14px">' +
+        '<b>Group tip:</b> this single QR covers all ' + o[7] + ' tickets — you don’t have to arrive ' +
+        'together. Share a screenshot of this email with your group; the door will admit each person ' +
+        'against it, one by one.</p>'
+      : '') +
     '</div>';
 
   MailApp.sendEmail({
@@ -491,8 +503,13 @@ function doorOk_(key) {
 }
 
 function orderInfo_(r) {
-  return { ok: true, status: String(r[10]), name: String(r[5]), qty: Number(r[7]),
-           tier_name: String(r[4]), code: String(r[9]), checked_in_at: String(r[12] || '') };
+  var qty = Number(r[7]);
+  var st = String(r[10]);
+  var inc = Number(r[14] || 0);
+  if (!inc && st === 'checked_in') inc = qty; // eski ikili kayıtlar: tamamı girdi say
+  return { ok: true, order_id: r[0], status: st, name: String(r[5]), qty: qty,
+           tier_name: String(r[4]), code: String(r[9]),
+           checked_in_at: String(r[12] || ''), in_count: inc };
 }
 
 /** Bilet doğrulama (işaretlemez). code + hmac imzası gerekir. */
@@ -524,15 +541,23 @@ function mark_(key, code, sig, orderId) {
   if (!found) return { ok: false, error: 'not_found' };
 
   var info = orderInfo_(found.row);
-  var st = String(found.row[10]);
-  if (st === 'checked_in') { info.result = 'already'; return info; }
-  if (st !== 'confirmed')  { info.result = 'not_confirmed'; return info; }
+  if (info.status === 'pending') { info.result = 'not_confirmed'; return info; }
+  if (info.status !== 'confirmed' && info.status !== 'checked_in') {
+    return { ok: false, error: 'Order is ' + info.status };
+  }
+  if (info.in_count >= info.qty) { info.result = 'already'; return info; } // tüm biletler kullanıldı
 
+  // Kısmi check-in: her çağrı 1 kişi alır; sayı dolunca status checked_in olur.
   var sh = SpreadsheetApp.getActive().getSheetByName('Orders');
   var now = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
-  sh.getRange(found.sheetRow, 11).setValue('checked_in');
+  var newCount = info.in_count + 1;
+  sh.getRange(found.sheetRow, 15).setValue(newCount);
   sh.getRange(found.sheetRow, 13).setValue(now);
-  info.status = 'checked_in'; info.checked_in_at = now; info.result = 'checked_in';
+  if (newCount >= info.qty) sh.getRange(found.sheetRow, 11).setValue('checked_in');
+  info.in_count = newCount;
+  info.checked_in_at = now;
+  info.status = newCount >= info.qty ? 'checked_in' : 'confirmed';
+  info.result = 'checked_in';
   return info;
 }
 
@@ -546,9 +571,12 @@ function listOrders_(key) {
   var orders = rows_('Orders')
     .filter(function (r) { var s = String(r[10]); return s === 'confirmed' || s === 'checked_in'; })
     .map(function (r) {
+      var inc = Number(r[14] || 0);
+      if (!inc && String(r[10]) === 'checked_in') inc = Number(r[7]);
       return { order_id: r[0], event: titles[String(r[2])] || String(r[2]),
                name: String(r[5]), qty: Number(r[7]), tier_name: String(r[4]),
-               code: String(r[9]), status: String(r[10]), checked_in_at: String(r[12] || '') };
+               code: String(r[9]), status: String(r[10]),
+               checked_in_at: String(r[12] || ''), in_count: inc };
     });
   return { ok: true, orders: orders };
 }

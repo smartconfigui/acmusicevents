@@ -195,9 +195,10 @@ function guestVerify(c) {
       '<p class="eyebrow" style="color:var(--ok)">Valid ticket ✓</p>' +
       `<h2 class="display" style="margin:0">${esc(d.name)}</h2>` +
       `<p class="mono msg">${d.qty} × ${esc(d.tier_name)} · ${esc(d.code)}</p>` +
+      (d.in_count > 0 ? `<p class="msg" style="color:var(--warn)">${d.in_count} of ${d.qty} already used.</p>` : '') +
       '<p class="msg">Show this screen (or your QR) at the door.</p>';
     else if (d.status === 'checked_in') html =
-      '<p class="eyebrow" style="color:var(--warn)">Already used</p>' +
+      '<p class="eyebrow" style="color:var(--warn)">All tickets used</p>' +
       `<p class="msg">Checked in at ${esc(d.checked_in_at)}.</p>`;
     else html = `<p class="eyebrow" style="color:var(--warn)">${esc(d.status)}</p><p class="msg">Payment not confirmed yet.</p>`;
     $('#guest-card').innerHTML = html;
@@ -264,7 +265,7 @@ function handleTicket(c) {
 
 function markByOrder(id) {
   api({ action: 'mark', key: doorKey, order: id })
-    .then(d => { showMarkResult(d); loadList(true); })
+    .then(showMarkResult)
     .catch(() => showResult('err', '📶', 'Network error', 'Try again'));
 }
 
@@ -274,21 +275,34 @@ function showMarkResult(d) {
     showResult('err', '⛔', 'Invalid ticket', d.error || '');
     return;
   }
-  const sub = `${d.qty} × ${d.tier_name} · ${d.code}`;
-  if (d.result === 'checked_in') { showResult('ok', '✅', d.name, sub); bumpStat(d.qty); }
-  else if (d.result === 'already') showResult('warn', '⚠️', 'Already in', `${d.name} · ${String(d.checked_in_at).slice(11, 16)}`);
+  if (d.result === 'checked_in') {
+    const all = d.in_count >= d.qty;
+    showResult('ok', '✅', d.name,
+      `${d.in_count}/${d.qty} in · ${d.tier_name} · ${d.code}`,
+      all ? null : d);
+    syncListEntry(d);
+  }
+  else if (d.result === 'already') showResult('warn', '⚠️', 'All tickets used', `${d.name} · ${d.qty}/${d.qty} in · ${String(d.checked_in_at).slice(11, 16)}`);
   else showResult('warn', '⏳', 'Not confirmed', `${d.name} — payment pending`);
 }
 
+function admitMore(id) {
+  api({ action: 'mark', key: doorKey, order: id })
+    .then(showMarkResult)
+    .catch(() => showResult('err', '📶', 'Network error', 'Try again'));
+}
+
 let resultTimer = null;
-function showResult(kind, icon, title, sub) {
+function showResult(kind, icon, title, sub, moreOrder) {
   const el = $('#result');
   el.className = kind;
   el.innerHTML = `<div class="icon">${icon}</div><h2>${esc(title)}</h2><p class="sub">${esc(sub)}</p>` +
-                 '<p class="sub" style="margin-top:20px">tap to continue</p>';
+    (moreOrder ? `<button class="btn small" style="margin-top:22px"
+        onclick="event.stopPropagation(); admitMore('${esc(String(moreOrder.order_id))}')">+1 admit (${moreOrder.in_count}/${moreOrder.qty} in)</button>` : '') +
+    '<p class="sub" style="margin-top:20px">tap to continue</p>';
   el.classList.remove('hidden');
   clearTimeout(resultTimer);
-  resultTimer = setTimeout(hideResult, 2600);
+  resultTimer = setTimeout(hideResult, moreOrder ? 6000 : 2600);
 }
 function hideResult() { $('#result').classList.add('hidden'); }
 
@@ -301,6 +315,10 @@ function loadList(force) {
   }).catch(() => {});
 }
 
+function inCountOf(o) {
+  return o.in_count != null ? o.in_count : (o.status === 'checked_in' ? o.qty : 0);
+}
+
 function renderList() {
   const q = ($('#q').value || '').toLowerCase();
   const rows = cachedList.filter(o => !q || o.name.toLowerCase().includes(q) || o.code.toLowerCase().includes(q));
@@ -309,27 +327,33 @@ function renderList() {
   rows.forEach(o => { (groups[o.event || ''] = groups[o.event || ''] || []).push(o); });
   $('#list').innerHTML = Object.keys(groups).map(evTitle => {
     const g = groups[evTitle];
-    const tin = g.filter(o => o.status === 'checked_in').reduce((a, o) => a + o.qty, 0);
+    const tin = g.reduce((a, o) => a + inCountOf(o), 0);
     const tot = g.reduce((a, o) => a + o.qty, 0);
     return (evTitle ? `<p class="eyebrow" style="margin:18px 0 4px">${esc(evTitle)} — ${tin}/${tot} in</p>` : '') +
-      g.map(o => `<div class="row">
+      g.map(o => {
+        const inc = inCountOf(o);
+        return `<div class="row">
         <div class="who"><b>${esc(o.name)}</b><span>${o.qty} × ${esc(o.tier_name)} · ${esc(o.code)}</span></div>
-        ${o.status === 'checked_in'
-          ? `<span class="in">✔ in ${String(o.checked_in_at).slice(11, 16)}</span>`
-          : `<button class="btn small" onclick="markByOrder('${esc(String(o.order_id))}')">Check in</button>`}
-      </div>`).join('');
+        ${inc >= o.qty
+          ? `<span class="in">✔ all in ${String(o.checked_in_at).slice(11, 16)}</span>`
+          : `<div style="display:flex;align-items:center;gap:10px">
+               ${inc > 0 ? `<span class="in">${inc}/${o.qty} in</span>` : ''}
+               <button class="btn small" onclick="markByOrder('${esc(String(o.order_id))}')">+1 in</button>
+             </div>`}
+      </div>`; }).join('');
   }).join('') || '<p class="msg" style="padding:12px 0">No matching guests.</p>';
 }
 
 function updateStats() {
-  const tin = cachedList.filter(o => o.status === 'checked_in').reduce((a, o) => a + o.qty, 0);
+  const tin = cachedList.reduce((a, o) => a + inCountOf(o), 0);
   const tot = cachedList.reduce((a, o) => a + o.qty, 0);
   $('#stats').textContent = tin + ' / ' + tot + ' in';
 }
-function bumpStat(q) {
-  const o = cachedList.find(x => x.code === lastHit.code.split('.')[0]);
-  if (o) { o.status = 'checked_in'; }
+function syncListEntry(d) {
+  const o = cachedList.find(x => String(x.order_id) === String(d.order_id) || x.code === d.code);
+  if (o) { o.in_count = d.in_count; o.status = d.status; o.checked_in_at = d.checked_in_at; }
   updateStats();
+  renderList();
 }
 
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
