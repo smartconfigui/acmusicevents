@@ -3165,23 +3165,16 @@ let dataState = CONFIG.API_URL ? 'loading' : 'fallback';
 let CARD_OK = false; // backend'de Square kuruluysa true gelir -> "Pay with Card" butonu görünür
 let SQ = { app: '', loc: '' }; // gömülü kart formu kimlikleri (SQUARE_APP_ID varsa dolu gelir)
 
-async function loadEvents() {
-  if (!CONFIG.API_URL) { EVENTS = DEMO_EVENTS; dataState = 'fallback'; render(EVENTS); hideSplash(); return; }
-  // Son başarılı verinin yerel kopyası varsa ANINDA onu çiz (tekrar ziyaretlerde
-  // sıfır bekleme); taze veri arkada gelince sessizce güncellenir.
-  let cached = null;
-  try { cached = JSON.parse(localStorage.getItem('acme_events') || 'null'); } catch (e) {}
-  if (cached && Array.isArray(cached.events) && cached.events.length) {
-    EVENTS = cached.events;
-    CARD_OK = !!cached.card;
-    if (cached.sq) SQ = cached.sq;
-    dataState = 'live';
-    render(EVENTS);
-    hideSplash();
-  } else {
-    renderLoading(); // ilk ziyaret: iskelet + spinner
-  }
+/* Stale-while-revalidate: yerel kopya yalnızca İLK BOYAMA içindir, otorite
+   her zaman API'dir. Kopya TTL'den eskiyse hiç gösterilmez (iskelete düşülür);
+   her açılışta ve sekme öne gelişte taze veri çekilip sessizce yeniden çizilir. */
+const EVENTS_TTL = 10 * 60 * 1000;
+let lastFetch = 0;
+
+async function fetchEvents() {
+  lastFetch = Date.now();
   $('#sync').textContent = '· syncing availability…';
+  let ok = false;
   try {
     const r = await Promise.race([
       fetch(CONFIG.API_URL + '?action=events'),
@@ -3194,18 +3187,51 @@ async function loadEvents() {
       if (data.sq) SQ = data.sq;
       dataState = 'live';
       try { localStorage.setItem('acme_events', JSON.stringify({ card: !!data.card, sq: data.sq || null, events: data.events, t: Date.now() })); } catch (e) {}
-    } else if (!cached) {
-      EVENTS = DEMO_EVENTS;
-      dataState = 'fallback';
+      ok = true;
     }
-  } catch (e) {
-    if (!cached) { EVENTS = DEMO_EVENTS; dataState = 'fallback'; }
-  }
+  } catch (e) {}
   $('#sync').textContent = '';
+  return ok;
+}
+
+async function loadEvents() {
+  if (!CONFIG.API_URL) { EVENTS = DEMO_EVENTS; dataState = 'fallback'; render(EVENTS); hideSplash(); return; }
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem('acme_events') || 'null'); } catch (e) {}
+  const usable = cached && Array.isArray(cached.events) && cached.events.length;
+  if (usable && (Date.now() - (cached.t || 0)) < EVENTS_TTL) {
+    // Taze yerel kopya: anında boya, gerçek veri arkadan gelip üzerine çizer.
+    EVENTS = cached.events;
+    CARD_OK = !!cached.card;
+    if (cached.sq) SQ = cached.sq;
+    dataState = 'live';
+    render(EVENTS);
+    hideSplash();
+  } else {
+    renderLoading(); // ilk ziyaret ya da bayat kopya: iskelet
+  }
+  const ok = await fetchEvents();
+  if (!ok && !EVENTS.length) {
+    // API'ye ulaşılamadı: bayat kopya bile demo veriden iyidir.
+    if (usable) {
+      EVENTS = cached.events; CARD_OK = !!cached.card; if (cached.sq) SQ = cached.sq; dataState = 'live';
+    } else {
+      EVENTS = DEMO_EVENTS; dataState = 'fallback';
+    }
+  }
   render(EVENTS);
   hideSplash();
   if (pendingBuyId) { const id = pendingBuyId; pendingBuyId = null; openBuy(id); }
 }
+
+// Sekme arka plandan öne gelince veriyi tazele (son çekimden 60 sn geçtiyse):
+// sayfayı açık unutan ziyaretçi de güncel kontenjanı görür.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (!CONFIG.API_URL || dataState === 'loading') return;
+  if (Date.now() - lastFetch < 60000) return;
+  fetchEvents().then(ok => { if (ok) render(EVENTS); });
+});
 
 /* Splash en az 600ms görünür, veri gelince yumuşak kapanır; 9 sn'de her koşulda kalkar. */
 const splashStart = Date.now();

@@ -357,6 +357,9 @@ function findOrder_(refCode) {
 
 /** Kurulumun eklediği installable onEdit tetikleyicisi. */
 function onOrderEdit(e) {
+  // Sheet'teki HER düzenleme canlı veriyi etkileyebilir (Events/Tiers/Orders):
+  // events önbelleğini hemen düşür ki API bir sonraki istekte taze veri versin.
+  try { CacheService.getScriptCache().remove('events_v1'); } catch (err) {}
   if (!e || !e.range) return;
   var sh = e.range.getSheet();
   if (sh.getName() !== 'Orders' || e.range.getColumn() !== 11) return; // K = status
