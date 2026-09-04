@@ -2722,6 +2722,10 @@ function openBuy(id) {
   // Panel açılır açılmaz kart formunu arka planda ısıt: kullanıcı adını/mailini
   // yazarken Square SDK'sı ve iframe varlıkları hazırlanmış olur.
   preWarmCard();
+  // Alıcı en taze kontenjanı görsün: adetler 10 sn'den eskiyse arkada yenile.
+  if (CONFIG.API_URL && EVENTS.length && Date.now() - lastAvail > 10000) {
+    fetchAvail().then(ok => { if (ok) updateBuyLimits(); });
+  }
   // Canlı kontenjan henüz gelmediyse formu açma: spinner göster, veri gelince devam et.
   if (dataState === 'loading') {
     pendingBuyId = id;
@@ -2833,6 +2837,15 @@ function selectTier(i) {
 function stepQty(d) {
   qty = Math.min(maxQty(), Math.max(1, qty + d));
   $('#qty').textContent = qty;
+  updateTotal();
+}
+/* Taze avail verisi gelince açık satın alma formundaki limitleri günceller
+   (yazılmış isim/mail alanlarına dokunmadan). */
+function updateBuyLimits() {
+  if (!currentEvent || !$('#qtymax')) return;
+  qty = Math.max(1, Math.min(qty, maxQty()));
+  $('#qty').textContent = qty;
+  $('#qtymax').textContent = 'max ' + maxQty();
   updateTotal();
 }
 
@@ -3165,72 +3178,106 @@ let dataState = CONFIG.API_URL ? 'loading' : 'fallback';
 let CARD_OK = false; // backend'de Square kuruluysa true gelir -> "Pay with Card" butonu görünür
 let SQ = { app: '', loc: '' }; // gömülü kart formu kimlikleri (SQUARE_APP_ID varsa dolu gelir)
 
-/* Stale-while-revalidate: yerel kopya yalnızca İLK BOYAMA içindir, otorite
-   her zaman API'dir. Kopya TTL'den eskiyse hiç gösterilmez (iskelete düşülür);
-   her açılışta ve sekme öne gelişte taze veri çekilip sessizce yeniden çizilir. */
-const EVENTS_TTL = 10 * 60 * 1000;
-let lastFetch = 0;
+/* Katmanlı yükleme:
+   1) Event listesi STATİK events.json'dan gelir (kendi domain'imiz, ~50ms) —
+      sayfa şak diye açılır, Apps Script beklenmez. Dosyayı backend, Sheet'te
+      Events/Tiers değiştiğinde GitHub'a kendisi commit'ler (olay güdümlü, cron yok).
+   2) Canlı bilet adetleri hafif ?action=avail ucundan gelip üzerine yazılır.
+   3) avail'deki katalog rev'i statik dosyanınkiyle uyuşmuyorsa (yeni event henüz
+      yayınlanmadıysa) tam liste API'den bir kez çekilir — bayatlık imkânsız. */
+let REV = '';
+let lastAvail = 0;
 
-async function fetchEvents() {
-  lastFetch = Date.now();
-  $('#sync').textContent = '· syncing availability…';
-  let ok = false;
+function mergeAvail(d) {
+  CARD_OK = !!d.card;
+  if (d.sq) SQ = d.sq;
+  if (!d.avail) return;
+  EVENTS.forEach(ev => {
+    const m = d.avail[ev.event_id];
+    if (!m) return;
+    (ev.tiers || []).forEach(t => { if (t.id in m) t.left = m[t.id]; });
+  });
+}
+
+async function fetchAvail() {
+  if (!CONFIG.API_URL) return false;
+  lastAvail = Date.now();
+  try {
+    const r = await Promise.race([
+      fetch(CONFIG.API_URL + '?action=avail'),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
+    ]);
+    const d = await r.json();
+    if (!d.ok) return false;
+    mergeAvail(d);
+    if (d.rev && REV && d.rev !== REV) await fetchFullEvents(); // katalog değişmiş
+    return true;
+  } catch (e) { return false; }
+}
+
+async function fetchFullEvents() {
   try {
     const r = await Promise.race([
       fetch(CONFIG.API_URL + '?action=events'),
       new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
     ]);
-    const data = await r.json();
-    if (data.ok && Array.isArray(data.events) && data.events.length) {
-      EVENTS = data.events;
-      CARD_OK = !!data.card;
-      if (data.sq) SQ = data.sq;
+    const d = await r.json();
+    if (d.ok && Array.isArray(d.events) && d.events.length) {
+      EVENTS = d.events;
+      REV = d.rev || REV;
+      CARD_OK = !!d.card;
+      if (d.sq) SQ = d.sq;
       dataState = 'live';
-      try { localStorage.setItem('acme_events', JSON.stringify({ card: !!data.card, sq: data.sq || null, events: data.events, t: Date.now() })); } catch (e) {}
-      ok = true;
+      return true;
     }
   } catch (e) {}
-  $('#sync').textContent = '';
-  return ok;
+  return false;
 }
 
 async function loadEvents() {
-  if (!CONFIG.API_URL) { EVENTS = DEMO_EVENTS; dataState = 'fallback'; render(EVENTS); hideSplash(); return; }
-  let cached = null;
-  try { cached = JSON.parse(localStorage.getItem('acme_events') || 'null'); } catch (e) {}
-  const usable = cached && Array.isArray(cached.events) && cached.events.length;
-  if (usable && (Date.now() - (cached.t || 0)) < EVENTS_TTL) {
-    // Taze yerel kopya: anında boya, gerçek veri arkadan gelip üzerine çizer.
-    EVENTS = cached.events;
-    CARD_OK = !!cached.card;
-    if (cached.sq) SQ = cached.sq;
-    dataState = 'live';
+  // 1) Statik katalog: anında boya. no-cache = ETag ile doğrula (304 gelirse bedava).
+  let staticOk = false;
+  try {
+    const r = await fetch('events.json', { cache: 'no-cache' });
+    if (r.ok) {
+      const d = await r.json();
+      if (d.ok && Array.isArray(d.events) && d.events.length) {
+        EVENTS = d.events;
+        REV = d.rev || '';
+        CARD_OK = !!d.card;
+        if (d.sq) SQ = d.sq;
+        dataState = 'live';
+        staticOk = true;
+        render(EVENTS);
+        hideSplash();
+      }
+    }
+  } catch (e) {}
+  // 2) Canlı adetler (statik yoksa eski yol: tam liste API'den, o da yoksa demo).
+  if (staticOk) {
+    if (CONFIG.API_URL) {
+      $('#sync').textContent = '· syncing availability…';
+      await fetchAvail();
+      $('#sync').textContent = '';
+      render(EVENTS);
+      updateBuyLimits(); // panel bu arada açıldıysa taze limitleri yansıt
+    }
+  } else {
+    renderLoading();
+    if (!CONFIG.API_URL || !(await fetchFullEvents())) { EVENTS = DEMO_EVENTS; dataState = 'fallback'; }
     render(EVENTS);
     hideSplash();
-  } else {
-    renderLoading(); // ilk ziyaret ya da bayat kopya: iskelet
   }
-  const ok = await fetchEvents();
-  if (!ok && !EVENTS.length) {
-    // API'ye ulaşılamadı: bayat kopya bile demo veriden iyidir.
-    if (usable) {
-      EVENTS = cached.events; CARD_OK = !!cached.card; if (cached.sq) SQ = cached.sq; dataState = 'live';
-    } else {
-      EVENTS = DEMO_EVENTS; dataState = 'fallback';
-    }
-  }
-  render(EVENTS);
-  hideSplash();
   if (pendingBuyId) { const id = pendingBuyId; pendingBuyId = null; openBuy(id); }
 }
 
-// Sekme arka plandan öne gelince veriyi tazele (son çekimden 60 sn geçtiyse):
+// Sekme arka plandan öne gelince adetleri tazele (son çekimden 60 sn geçtiyse):
 // sayfayı açık unutan ziyaretçi de güncel kontenjanı görür.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
-  if (!CONFIG.API_URL || dataState === 'loading') return;
-  if (Date.now() - lastFetch < 60000) return;
-  fetchEvents().then(ok => { if (ok) render(EVENTS); });
+  if (!CONFIG.API_URL || !EVENTS.length) return;
+  if (Date.now() - lastAvail < 60000) return;
+  fetchAvail().then(ok => { if (ok) { render(EVENTS); updateBuyLimits(); } });
 });
 
 /* Splash en az 600ms görünür, veri gelince yumuşak kapanır; 9 sn'de her koşulda kalkar. */

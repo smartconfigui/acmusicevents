@@ -6,6 +6,7 @@
  *
  * Uçlar (web app deploy sonrası):
  *   GET  ?action=events                     -> aktif etkinlikler + kademe kontenjanları (JSON)
+ *   GET  ?action=avail                      -> yalnızca canlı kalan adetler + katalog rev'i (hafif)
  *   POST {action:'order', ...}              -> sipariş kaydı (pending) + referans kodu
  *   GET  ?action=status&code=X&email=Y      -> "biletim nerede?" sorgusu
  *   GET  ?action=scan&code=X&sig=Y          -> bilet QR doğrulama sayfası (işaretlemez)
@@ -96,9 +97,19 @@ function doGet(e) {
       var cache = CacheService.getScriptCache();
       var hit = cache.get('events_v1');
       if (hit) return ContentService.createTextOutput(hit).setMimeType(ContentService.MimeType.JSON);
-      var payload = JSON.stringify({ ok: true, card: cardReady_(), sq: sqPublic_(), events: getEvents_() });
+      var payload = eventsPayload_();
       cache.put('events_v1', payload, 60);
       return ContentService.createTextOutput(payload).setMimeType(ContentService.MimeType.JSON);
+    }
+    if (a === 'avail') {
+      // Hafif canlı uç: yalnızca kademe başına kalan adetler + katalog rev'i.
+      // Site event listesini statik events.json'dan alır, adetleri buradan tazeler.
+      var ac = CacheService.getScriptCache();
+      var ahit = ac.get('avail_v1');
+      if (ahit) return ContentService.createTextOutput(ahit).setMimeType(ContentService.MimeType.JSON);
+      var ap = JSON.stringify({ ok: true, rev: catalogRev_(), card: cardReady_(), sq: sqPublic_(), avail: availMap_() });
+      ac.put('avail_v1', ap, 10);
+      return ContentService.createTextOutput(ap).setMimeType(ContentService.MimeType.JSON);
     }
     if (a === 'status')  return json_(getStatus_(p.code, p.email));
     // JSON uçları — checkin sayfası (acmusicevents.com/checkin/) bunları kullanır
@@ -130,6 +141,13 @@ function doPost(e) {
 function json_(o) {
   return ContentService.createTextOutput(JSON.stringify(o))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/** events + avail cevap önbelleklerini birlikte düşürür. */
+function bustCache_() {
+  var c = CacheService.getScriptCache();
+  c.remove('events_v1');
+  c.remove('avail_v1');
 }
 
 /* ============================== VERİ OKUMA ============================== */
@@ -164,6 +182,80 @@ function tierLeftMap_() {
     map[k] = Math.max(0, Number(cap) - Number(r[5] || 0) - (used[k] || 0));
   });
   return map;
+}
+
+/** events cevabının tamamı (rev dahil) — hem API ucu hem events.json bunu kullanır. */
+function eventsPayload_() {
+  return JSON.stringify({ ok: true, rev: catalogRev_(), card: cardReady_(), sq: sqPublic_(), events: getEvents_() });
+}
+
+/** { event_id: { tier_id: left } } — avail ucunun gövdesi. */
+function availMap_() {
+  var leftMap = tierLeftMap_();
+  var out = {};
+  Object.keys(leftMap).forEach(function (k) {
+    var i = k.indexOf('|');
+    var ev = k.slice(0, i), tier = k.slice(i + 1);
+    (out[ev] = out[ev] || {})[tier] = leftMap[k];
+  });
+  return out;
+}
+
+/** Katalog sürüm damgası: yalnızca liste yapısını etkileyen alanlardan hesaplanır
+ *  (kalan adetler HARİÇ — yoksa her satışta rev değişirdi). Site, statik
+ *  events.json'daki rev ile avail'deki rev'i karşılaştırıp uyuşmazsa tam listeyi çeker. */
+function catalogRev_() {
+  var evs = rows_('Events')
+    .filter(function (r) { return String(r[5]) === 'active'; })
+    .map(function (r) { return [String(r[0]), String(r[1]), dateStr_(r[2]), String(r[3]), String(r[6] || ''), String(r[7] || '')]; });
+  var tiers = rows_('Tiers')
+    .map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]), String(r[6] || '')]; });
+  var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify([evs, tiers]));
+  return raw.map(function (b) { return ('0' + (b & 0xFF).toString(16)).slice(-2); }).join('').slice(0, 10);
+}
+
+/* Events/Tiers düzenlenince events.json'u GitHub'a otomatik commit'leme.
+   GITHUB_TOKEN Script Property'si yoksa sessizce atlanır — site yine doğru
+   çalışır (rev uyuşmazlığında tam listeyi API'den çeker), sadece ilk boyama
+   için bayat statik dosya kullanılır. */
+function schedulePublish_() {
+  var cache = CacheService.getScriptCache();
+  if (cache.get('pub_sched')) return; // 60 sn içinde zaten planlandı
+  cache.put('pub_sched', '1', 90);
+  ScriptApp.newTrigger('publishEvents').timeBased().after(60 * 1000).create();
+}
+
+/** Elle de çalıştırılabilir: events.json'u hemen GitHub'a yazar. */
+function publishEvents() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'publishEvents' && t.getEventType() === ScriptApp.EventType.CLOCK) {
+      try { ScriptApp.deleteTrigger(t); } catch (e) {}
+    }
+  });
+  CacheService.getScriptCache().remove('pub_sched');
+  pushEventsJson_();
+}
+
+function pushEventsJson_() {
+  var token = PropertiesService.getScriptProperties().getProperty('GITHUB_TOKEN');
+  if (!token) return;
+  var url = 'https://api.github.com/repos/smartconfigui/acmusicevents/contents/events.json';
+  var headers = { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json' };
+  var body = eventsPayload_();
+  var sha = null;
+  var res = UrlFetchApp.fetch(url + '?ref=main', { headers: headers, muteHttpExceptions: true });
+  if (res.getResponseCode() === 200) {
+    var cur = JSON.parse(res.getContentText());
+    sha = cur.sha;
+    var curText = Utilities.newBlob(Utilities.base64Decode(String(cur.content || '').replace(/\n/g, ''))).getDataAsString('UTF-8');
+    if (curText === body) return; // içerik aynı: commit atma
+  }
+  var payload = { message: 'events.json guncelle (Sheet degisti)', content: Utilities.base64Encode(body, Utilities.Charset.UTF_8), branch: 'main' };
+  if (sha) payload.sha = sha;
+  UrlFetchApp.fetch(url, {
+    method: 'put', headers: headers, contentType: 'application/json',
+    payload: JSON.stringify(payload), muteHttpExceptions: true,
+  });
 }
 
 function getEvents_() {
@@ -225,7 +317,7 @@ function createOrder_(b) {
 
     orders.appendRow([n, now, String(b.event_id), String(tier[1]), String(tier[2]),
                       name, email, qty, amount, ref, 'pending', '', '', '']);
-    CacheService.getScriptCache().remove('events_v1'); // kontenjan değişti, önbelleği tazele
+    bustCache_(); // kontenjan değişti, önbellekleri tazele
     // Gömülü kart formu kuruluysa (APP_ID var) hosted yedek linki üretme — her siparişten ~1 sn kazandırır.
     var cardUrl = sqPublic_().app ? '' :
       squarePayLink_(ref, String(ev[1]) + ' — ' + qty + '× ' + String(tier[2]),
@@ -277,7 +369,7 @@ function payWithCard_(b) {
     sh.getRange(found.sheetRow, 12).setValue(now);
     var rowData = sh.getRange(found.sheetRow, 1, 1, ORDERS_HEADERS.length).getValues()[0];
     try { sendTicket_(rowData); } catch (e) { Logger.log('bilet maili gönderilemedi: ' + e); }
-    CacheService.getScriptCache().remove('events_v1');
+    bustCache_();
     return { ok: true };
   }
   Logger.log('Square payment cevabı: ' + resp.getContentText());
@@ -359,10 +451,14 @@ function findOrder_(refCode) {
 function onOrderEdit(e) {
   // Sheet'teki HER düzenleme canlı veriyi etkileyebilir (Events/Tiers/Orders):
   // events önbelleğini hemen düşür ki API bir sonraki istekte taze veri versin.
-  try { CacheService.getScriptCache().remove('events_v1'); } catch (err) {}
+  try { bustCache_(); } catch (err) {}
   if (!e || !e.range) return;
   var sh = e.range.getSheet();
-  if (sh.getName() !== 'Orders' || e.range.getColumn() !== 11) return; // K = status
+  var sn = sh.getName();
+  // Katalog değişti (yeni event, fiyat, link...): events.json'u GitHub'a
+  // otomatik yayınla (60 sn toparlama süresiyle, art arda düzenlemeler tek commit olur).
+  if (sn === 'Events' || sn === 'Tiers') { try { schedulePublish_(); } catch (err) {} }
+  if (sn !== 'Orders' || e.range.getColumn() !== 11) return; // K = status
   var row = e.range.getRow();
   if (row < 2 || String(e.range.getValue()) !== 'confirmed') return;
 
@@ -475,7 +571,7 @@ function scanVenmo() {
       }
       th.addLabel(handled ? lblAuto : lblManual);
     });
-    if (handledAny) CacheService.getScriptCache().remove('events_v1');
+    if (handledAny) bustCache_();
   } finally {
     lock.releaseLock();
   }
