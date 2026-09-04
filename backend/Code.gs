@@ -214,10 +214,11 @@ function catalogRev_() {
   return raw.map(function (b) { return ('0' + (b & 0xFF).toString(16)).slice(-2); }).join('').slice(0, 10);
 }
 
-/* Events/Tiers düzenlenince events.json'u GitHub'a otomatik commit'leme.
-   GITHUB_TOKEN Script Property'si yoksa sessizce atlanır — site yine doğru
-   çalışır (rev uyuşmazlığında tam listeyi API'den çeker), sadece ilk boyama
-   için bayat statik dosya kullanılır. */
+/* Events/Tiers düzenlenince events.js'i GitHub'a otomatik commit'leme.
+   Site bu dosyayı <script src="events.js"> ile yükler: veri ilk kare basılmadan
+   hazır olur, açılışta flicker olmaz. GITHUB_TOKEN Script Property'si yoksa
+   sessizce atlanır — site yine doğru çalışır (rev uyuşmazlığında tam listeyi
+   API'den çeker), sadece ilk boyama yavaş yoldan gelir. */
 function schedulePublish_() {
   var cache = CacheService.getScriptCache();
   if (cache.get('pub_sched')) return; // 60 sn içinde zaten planlandı
@@ -225,7 +226,7 @@ function schedulePublish_() {
   ScriptApp.newTrigger('publishEvents').timeBased().after(60 * 1000).create();
 }
 
-/** Elle de çalıştırılabilir: events.json'u hemen GitHub'a yazar. */
+/** Elle de çalıştırılabilir: events.js'i hemen GitHub'a yazar. */
 function publishEvents() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'publishEvents' && t.getEventType() === ScriptApp.EventType.CLOCK) {
@@ -239,9 +240,9 @@ function publishEvents() {
 function pushEventsJson_() {
   var token = PropertiesService.getScriptProperties().getProperty('GITHUB_TOKEN');
   if (!token) return;
-  var url = 'https://api.github.com/repos/smartconfigui/acmusicevents/contents/events.json';
+  var url = 'https://api.github.com/repos/smartconfigui/acmusicevents/contents/events.js';
   var headers = { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json' };
-  var body = eventsPayload_();
+  var body = 'window.__EVENTS=' + eventsPayload_() + ';';
   var sha = null;
   var res = UrlFetchApp.fetch(url + '?ref=main', { headers: headers, muteHttpExceptions: true });
   if (res.getResponseCode() === 200) {
@@ -250,7 +251,7 @@ function pushEventsJson_() {
     var curText = Utilities.newBlob(Utilities.base64Decode(String(cur.content || '').replace(/\n/g, ''))).getDataAsString('UTF-8');
     if (curText === body) return; // içerik aynı: commit atma
   }
-  var payload = { message: 'events.json guncelle (Sheet degisti)', content: Utilities.base64Encode(body, Utilities.Charset.UTF_8), branch: 'main' };
+  var payload = { message: 'events.js guncelle (Sheet degisti)', content: Utilities.base64Encode(body, Utilities.Charset.UTF_8), branch: 'main' };
   if (sha) payload.sha = sha;
   UrlFetchApp.fetch(url, {
     method: 'put', headers: headers, contentType: 'application/json',

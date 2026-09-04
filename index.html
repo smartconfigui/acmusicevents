@@ -2476,6 +2476,9 @@ var qrcode = function() {
     return qrcode;
 }));</script>
 
+<!-- Statik katalog: parser'ı bloklar, veri ilk kare basılmadan hazır olur (flicker yok).
+     Sheet'te Events/Tiers değişince backend bu dosyayı GitHub'a kendisi commit'ler. -->
+<script src="events.js"></script>
 <script>
 /* ================= demo data (used while CONFIG.API_URL is empty) ================= */
 const DEMO_EVENTS = [
@@ -3235,24 +3238,20 @@ async function fetchFullEvents() {
 }
 
 async function loadEvents() {
-  // 1) Statik katalog: anında boya. no-cache = ETag ile doğrula (304 gelirse bedava).
+  // 1) Statik katalog: events.js parser'ı bloklayarak yüklendi, veri şu an hazır —
+  //    render senkron çalışır, sayfa tek seferde dolu basılır (ara kare yok).
   let staticOk = false;
-  try {
-    const r = await fetch('events.json', { cache: 'no-cache' });
-    if (r.ok) {
-      const d = await r.json();
-      if (d.ok && Array.isArray(d.events) && d.events.length) {
-        EVENTS = d.events;
-        REV = d.rev || '';
-        CARD_OK = !!d.card;
-        if (d.sq) SQ = d.sq;
-        dataState = 'live';
-        staticOk = true;
-        render(EVENTS);
-        hideSplash();
-      }
-    }
-  } catch (e) {}
+  const d = window.__EVENTS;
+  if (d && d.ok && Array.isArray(d.events) && d.events.length) {
+    EVENTS = d.events;
+    REV = d.rev || '';
+    CARD_OK = !!d.card;
+    if (d.sq) SQ = d.sq;
+    dataState = 'live';
+    staticOk = true;
+    render(EVENTS);
+    hideSplash();
+  }
   // 2) Canlı adetler (statik yoksa eski yol: tam liste API'den, o da yoksa demo).
   if (staticOk) {
     if (CONFIG.API_URL) {

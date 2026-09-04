@@ -70,9 +70,9 @@ Orders sayfasına `pending` olarak düşürür.
 - **Süre aşımı:** 24 saatten eski `pending` siparişler otomatik `expired` olur,
   kontenjan geri açılır.
 - **Statik event listesi (hızlı açılış, opsiyonel ama önerilir):** Site, event
-  listesini kendi domain'indeki `events.json`'dan okur (anında açılış); canlı
+  listesini kendi domain'indeki `events.js`'ten okur (ilk kare basılmadan hazır, flicker yok); canlı
   bilet adetleri hafif `?action=avail` ucundan gelir. Sheet'te Events/Tiers
-  değiştiğinde script `events.json`'u GitHub'a otomatik commit'ler (60 sn
+  değiştiğinde script `events.js`'i GitHub'a otomatik commit'ler (60 sn
   toparlama süresiyle). Bir kez kurulum:
   1. GitHub → Settings → Developer settings → **Fine-grained tokens** →
      Generate new token. Repository access: **Only select repositories** →
@@ -81,7 +81,7 @@ Orders sayfasına `pending` olarak düşürür.
   2. Token'ı Apps Script → Project Settings → **Script Properties**'e
      `GITHUB_TOKEN` adıyla ekle.
   3. Editörden **publishEvents** fonksiyonunu bir kez Run et (ilk dosyayı yazar).
-  Token yoksa hiçbir şey bozulmaz: site, `events.json`'daki sürüm damgası
+  Token yoksa hiçbir şey bozulmaz: site, `events.js`'teki sürüm damgası
   (`rev`) canlıyla uyuşmadığını görüp tam listeyi API'den çeker — sadece ilk
   boyama için bayat statik dosya kullanılır. `publishEvents`'i istediğin an
   elle de çalıştırabilirsin.
