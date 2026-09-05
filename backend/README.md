@@ -53,6 +53,15 @@ Orders sayfasına `pending` olarak düşürür.
   ayrılmaz, ödeme başarılı olunca sipariş OTOMATİK confirmed olur ve QR bilet
   maili anında gider (elle tick gerekmez). Bu property yoksa hazır Square
   sayfası linki kullanılmaya devam eder.
+- **Apple Pay / Google Pay:** Gömülü kart formu kuruluysa (SQUARE_APP_ID)
+  kart ekranının üstünde cüzdan butonları kendiliğinden çıkar; ödeme aynı
+  otomatik onay + anında bilet akışından geçer. **Google Pay** için ekstra
+  kurulum yok. **Apple Pay** için bir kerelik domain doğrulaması gerekir:
+  developer.squareup.com → uygulaman → **Apple Pay** sekmesi → Add domain →
+  `acmusicevents.com` → indirilen doğrulama dosyasını sitenin
+  `.well-known/apple-developer-merchantid-domain-association` yoluna koy
+  (dosyayı Claude'a ver, repo'ya ekler) → Dashboard'da Verify. Doğrulama
+  bitene kadar Apple Pay butonu görünmez, başka hiçbir şey etkilenmez.
 - **Kademe kapatma:** `cap`'i `sold_elsewhere`'e eşitle (kalan 0 olur).
 - **Kapı / check-in:** `https://acmusicevents.com/checkin/` — şifre: `1453`
   (Code.gs'te `DOOR_PASS`; girildikten sonra o telefonda 4 saat geçerli).

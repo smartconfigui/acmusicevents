@@ -94,6 +94,11 @@
   @media (prefers-reduced-motion: reduce) { #splash img, #splash .splash-word { animation:none; } }
   /* hide honeypot from humans, keep it for bots */
   .hp { position:absolute; left:-5000px; height:1px; width:1px; overflow:hidden; }
+  /* cüzdan butonları (Apple Pay yalnızca Safari'de çizilir) */
+  #apple-pay-btn { -webkit-appearance:-apple-pay-button; -apple-pay-button-type:pay;
+                   -apple-pay-button-style:white; display:block; width:100%; height:44px;
+                   border-radius:4px; cursor:pointer; border:0; }
+  #gpay-btn { height:44px; }
 </style>
 </head>
 <body class="min-h-screen">
@@ -3062,6 +3067,13 @@ function renderInlineCardStep(o) {
       </div>
       <button onclick="closeBuy()" aria-label="Close" class="text-dim hover:text-paper text-2xl leading-none px-2">×</button>
     </div>
+    <div id="wallets" hidden>
+      <div class="flex flex-col gap-2">
+        <button id="apple-pay-btn" type="button" aria-label="Apple Pay" hidden></button>
+        <div id="gpay-btn" hidden></div>
+      </div>
+      <p class="font-mono text-[10px] uppercase tracking-[.2em] text-dim text-center my-2">— or enter card details —</p>
+    </div>
     <div class="border border-line p-5">
       <div class="flex items-center justify-between">
         <span class="font-mono text-xs uppercase tracking-[.2em] text-dim">Total · <span id="ord-code">${o.ref_code ? esc(o.ref_code) : '…'}</span></span>
@@ -3089,6 +3101,7 @@ async function initInlineCard(o) {
     await card.attach('#card-el');
     inlineCardAttached = true;
     inlineMaybeEnable();
+    initWallets(o); // Apple Pay / Google Pay butonlarını arkada dene (desteklenmiyorsa görünmez)
     btn.onclick = async () => {
       const ord = (LAST_ORDER && LAST_ORDER.ref_code) ? LAST_ORDER : o;
       if (!ord.ref_code) return;
@@ -3112,6 +3125,62 @@ async function initInlineCard(o) {
     msg.innerHTML = hosted
       ? `Card form couldn't load. <a href="${esc(hosted)}" target="_blank" rel="noopener" class="underline underline-offset-2 text-neonsoft">Use the secure checkout page ↗</a>`
       : `Card form couldn't load — please pay with Venmo.`;
+  }
+}
+
+/* Apple Pay / Google Pay: Square SDK'nın cüzdan yöntemleri. Token aynı
+   action=pay ucuna gider — otomatik onay + anında bilet akışı birebir aynı.
+   Cihaz/tarayıcı desteklemiyorsa (ya da Apple domain doğrulaması yoksa)
+   ilgili buton hiç görünmez. */
+async function initWallets(o) {
+  if (!sqPayments) return;
+  let req;
+  try {
+    req = sqPayments.paymentRequest({
+      countryCode: 'US', currencyCode: 'USD',
+      total: { amount: String(o.amount_due), label: 'AC Music Events' },
+    });
+  } catch (e) { return; }
+  let any = false;
+  try {
+    const gp = await sqPayments.googlePay(req);
+    await gp.attach('#gpay-btn', { buttonColor: 'white', buttonSizeMode: 'fill', buttonType: 'short' });
+    const b = $('#gpay-btn');
+    b.hidden = false; any = true;
+    b.addEventListener('click', () => walletPay(gp));
+  } catch (e) {}
+  try {
+    const ap = await sqPayments.applePay(req);
+    const b = $('#apple-pay-btn');
+    b.hidden = false; any = true;
+    b.addEventListener('click', () => walletPay(ap));
+  } catch (e) {}
+  if (any && $('#wallets')) $('#wallets').hidden = false;
+}
+
+async function walletPay(w) {
+  const msg = $('#pay-msg');
+  try {
+    // tokenize kullanıcı hareketi içinde çağrılmalı: cüzdan hemen açılır,
+    // sipariş kaydı arkada paralel tamamlanır.
+    const t = await w.tokenize();
+    if (t.status !== 'OK') {
+      if (t.errors && t.errors[0]) msg.textContent = t.errors[0].message + ' — please try again.';
+      return; // vazgeçti: sessizce forma dön
+    }
+    msg.textContent = 'Processing…';
+    let ord = null;
+    for (let i = 0; i < 75 && !ord; i++) {
+      if (LAST_ORDER && LAST_ORDER.ref_code) ord = LAST_ORDER;
+      else await new Promise(r => setTimeout(r, 200));
+    }
+    if (!ord) throw new Error("Your order couldn't be created");
+    const r = await fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify({ action: 'pay', ref_code: ord.ref_code, token: t.token }) });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'Payment failed');
+    renderPaidStep(ord);
+  } catch (err) {
+    msg.textContent = err.message + ' — please try again, or use the card form below.';
   }
 }
 
