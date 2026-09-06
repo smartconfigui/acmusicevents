@@ -2818,6 +2818,13 @@ function renderBuyForm() {
         <span class="font-mono text-xs uppercase tracking-[.2em] text-dim">Total</span>
         <span id="total" class="display text-3xl">${fmtMoney(tiersOf(ev)[selectedTierIdx].price)}</span>
       </div>
+      <div id="wallets" hidden>
+        <div class="flex flex-col gap-2">
+          <button id="apple-pay-btn" type="button" aria-label="Apple Pay" hidden></button>
+          <div id="gpay-btn" hidden></div>
+        </div>
+        <p class="font-mono text-[10px] uppercase tracking-[.2em] text-dim text-center my-2">— or —</p>
+      </div>
       ${(CARD_OK || tiersOf(ev).some(t => t.square)) ? `
       <div class="grid grid-cols-2 gap-3">
         <button type="submit" value="venmo" class="bg-neon text-night display text-lg uppercase py-3.5 shadow-neon hover:bg-neonsoft">${VENMO_ICON}Pay with Venmo</button>
@@ -2827,6 +2834,9 @@ function renderBuyForm() {
       <p class="text-dim text-xs leading-relaxed">Your ticket arrives by email once your payment is confirmed — usually within an hour.</p>
     </form>`;
   $('#order-form').addEventListener('submit', submitOrder);
+  $('#apple-pay-btn').addEventListener('click', () => expressPay('ap'));
+  $('#gpay-btn').addEventListener('click', () => expressPay('gp'));
+  refreshFormWallets();
 }
 
 let qty = 1;
@@ -2834,7 +2844,10 @@ let selectedTierIdx = 0;
 function curTier() { return tiersOf(currentEvent)[selectedTierIdx]; }
 // Kademe açıkken (left>0) tek sipariş kalanın 3 üzerine kadar çıkabilir (bilinçli oversell).
 function maxQty() { return Math.min(tierLeft(curTier()) + 3, 8); }
-function updateTotal() { $('#total').textContent = fmtMoney(qty * curTier().price); }
+function updateTotal() {
+  $('#total').textContent = fmtMoney(qty * curTier().price);
+  refreshFormWallets(); // cüzdan sayfasındaki tutar da güncel kalsın
+}
 function selectTier(i) {
   selectedTierIdx = i;
   qty = Math.min(qty, maxQty());
@@ -3067,13 +3080,6 @@ function renderInlineCardStep(o) {
       </div>
       <button onclick="closeBuy()" aria-label="Close" class="text-dim hover:text-paper text-2xl leading-none px-2">×</button>
     </div>
-    <div id="wallets" hidden>
-      <div class="flex flex-col gap-2">
-        <button id="apple-pay-btn" type="button" aria-label="Apple Pay" hidden></button>
-        <div id="gpay-btn" hidden></div>
-      </div>
-      <p class="font-mono text-[10px] uppercase tracking-[.2em] text-dim text-center my-2">— or enter card details —</p>
-    </div>
     <div class="border border-line p-5">
       <div class="flex items-center justify-between">
         <span class="font-mono text-xs uppercase tracking-[.2em] text-dim">Total · <span id="ord-code">${o.ref_code ? esc(o.ref_code) : '…'}</span></span>
@@ -3101,7 +3107,6 @@ async function initInlineCard(o) {
     await card.attach('#card-el');
     inlineCardAttached = true;
     inlineMaybeEnable();
-    initWallets(o); // Apple Pay / Google Pay butonlarını arkada dene (desteklenmiyorsa görünmez)
     btn.onclick = async () => {
       const ord = (LAST_ORDER && LAST_ORDER.ref_code) ? LAST_ORDER : o;
       if (!ord.ref_code) return;
@@ -3128,59 +3133,106 @@ async function initInlineCard(o) {
   }
 }
 
-/* Apple Pay / Google Pay: Square SDK'nın cüzdan yöntemleri. Token aynı
-   action=pay ucuna gider — otomatik onay + anında bilet akışı birebir aynı.
+/* Apple Pay / Google Pay — express checkout: butonlar satın alma FORMUNDA
+   durur (isim/mail girildikten sonra tek dokunuş). Token aynı action=pay
+   ucuna gider — otomatik onay + anında bilet akışı kartla birebir aynı.
    Cihaz/tarayıcı desteklemiyorsa (ya da Apple domain doğrulaması yoksa)
    ilgili buton hiç görünmez. */
-async function initWallets(o) {
-  if (!sqPayments) return;
+let SQW = { seq: 0, ap: null, gp: null, timer: 0 };
+
+/* Debounce'lu kurulum: form her çizildiğinde ve tutar her değiştiğinde çağrılır;
+   cüzdan nesneleri güncel tutarla yeniden yaratılır (art arda +/- tek kuruluma iner). */
+function refreshFormWallets() {
+  if (!CONFIG.API_URL || !SQ.app || !SQ.loc) return;
+  clearTimeout(SQW.timer);
+  SQW.timer = setTimeout(buildFormWallets, 350);
+}
+
+async function buildFormWallets() {
+  if (!currentEvent || !$('#wallets')) return;
+  const mySeq = ++SQW.seq;
+  try {
+    await loadSquareSdk();
+    if (!sqPayments) sqPayments = window.Square.payments(SQ.app, SQ.loc);
+  } catch (e) { return; }
+  if (mySeq !== SQW.seq || !$('#wallets') || !currentEvent) return; // ekran değişti
   let req;
   try {
     req = sqPayments.paymentRequest({
       countryCode: 'US', currencyCode: 'USD',
-      total: { amount: String(o.amount_due), label: 'AC Music Events' },
+      total: { amount: (qty * curTier().price).toFixed(2), label: 'AC Music Events' },
     });
   } catch (e) { return; }
-  let any = false;
   try {
+    if (SQW.gp) { try { SQW.gp.destroy(); } catch (e) {} SQW.gp = null; }
     const gp = await sqPayments.googlePay(req);
-    await gp.attach('#gpay-btn', { buttonColor: 'white', buttonSizeMode: 'fill', buttonType: 'short' });
-    const b = $('#gpay-btn');
-    b.hidden = false; any = true;
-    b.addEventListener('click', () => walletPay(gp));
-  } catch (e) {}
+    const holder = $('#gpay-btn');
+    if (mySeq !== SQW.seq || !holder) { try { gp.destroy(); } catch (e) {} }
+    else {
+      holder.innerHTML = '';
+      await gp.attach('#gpay-btn', { buttonColor: 'white', buttonSizeMode: 'fill', buttonType: 'short' });
+      holder.hidden = false;
+      SQW.gp = gp;
+    }
+  } catch (e) { SQW.gp = null; }
   try {
     const ap = await sqPayments.applePay(req);
-    const b = $('#apple-pay-btn');
-    b.hidden = false; any = true;
-    b.addEventListener('click', () => walletPay(ap));
-  } catch (e) {}
-  if (any && $('#wallets')) $('#wallets').hidden = false;
+    if (mySeq === SQW.seq && $('#apple-pay-btn')) {
+      $('#apple-pay-btn').hidden = false;
+      SQW.ap = ap;
+    }
+  } catch (e) { SQW.ap = null; }
+  if (mySeq === SQW.seq && $('#wallets') && (SQW.gp || SQW.ap)) $('#wallets').hidden = false;
 }
 
-async function walletPay(w) {
-  const msg = $('#pay-msg');
+async function expressPay(kind) {
+  const w = kind === 'ap' ? SQW.ap : SQW.gp;
+  const f = $('#order-form');
+  if (!w || !f) return;
+  if (f.website.value) return; // honeypot
+  if (!f.reportValidity()) return; // isim + mail zorunlu (kapı listesi + bilet maili)
+  const order = {
+    event_id: currentEvent.event_id,
+    name: f.name.value.trim(),
+    email: f.email.value.trim(),
+    qty,
+    tier: curTier().id,
+    tier_name: curTier().name,
+  };
+  // Sipariş kaydını hemen başlat ama BEKLEME: cüzdan sayfası kullanıcı
+  // hareketi içinde anında açılmalı. (Ödeme action=pay'de çekilir; sipariş
+  // oluşmazsa hiçbir tahsilat yapılmaz.)
+  LAST_ORDER = null;
+  const orderP = (CONFIG.API_URL ? apiCreateOrder(order) : demoCreateOrder(order))
+    .then(res => { LAST_ORDER = Object.assign({}, order, res); return LAST_ORDER; })
+    .catch(() => null);
+  let t;
+  try { t = await w.tokenize(); } catch (e) { return; } // vazgeçti: formda kal
+  if (t.status !== 'OK') {
+    if (t.errors && t.errors[0]) alert(t.errors[0].message + ' — please try again.');
+    return;
+  }
+  renderOrderPending();
+  const ord = await orderP;
+  if (!ord) {
+    renderBuyForm();
+    const n = $('#f-name'), m = $('#f-email');
+    if (n) n.value = order.name;
+    if (m) m.value = order.email;
+    alert("Your payment was NOT charged — the order couldn't be created. Please try again.");
+    return;
+  }
   try {
-    // tokenize kullanıcı hareketi içinde çağrılmalı: cüzdan hemen açılır,
-    // sipariş kaydı arkada paralel tamamlanır.
-    const t = await w.tokenize();
-    if (t.status !== 'OK') {
-      if (t.errors && t.errors[0]) msg.textContent = t.errors[0].message + ' — please try again.';
-      return; // vazgeçti: sessizce forma dön
-    }
-    msg.textContent = 'Processing…';
-    let ord = null;
-    for (let i = 0; i < 75 && !ord; i++) {
-      if (LAST_ORDER && LAST_ORDER.ref_code) ord = LAST_ORDER;
-      else await new Promise(r => setTimeout(r, 200));
-    }
-    if (!ord) throw new Error("Your order couldn't be created");
     const r = await fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify({ action: 'pay', ref_code: ord.ref_code, token: t.token }) });
     const d = await r.json();
     if (!d.ok) throw new Error(d.error || 'Payment failed');
     renderPaidStep(ord);
   } catch (err) {
-    msg.textContent = err.message + ' — please try again, or use the card form below.';
+    renderBuyForm();
+    const n = $('#f-name'), m = $('#f-email');
+    if (n) n.value = order.name;
+    if (m) m.value = order.email;
+    alert(err.message + ' — please try again, or pay with Venmo/card.');
   }
 }
 
