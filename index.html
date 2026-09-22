@@ -2479,11 +2479,13 @@ var qrcode = function() {
 
 <!-- Statik katalog: parser'ı bloklar, veri ilk kare basılmadan hazır olur (flicker yok).
      Sheet'te Events/Tiers değişince backend bu dosyayı GitHub'a kendisi commit'ler.
-     ?v=timestamp ile her sayfa yüklemesinde YENİ bir URL istenir: ne tarayıcı
-     diskten eskisini verebilir, ne de GitHub'ın CDN'i "bunu daha önce gördüm"
-     diyebilir — her seferinde origin'den taze kopya gelir (GH Pages'in ~10 dk
-     cache'iyle savaşmak yerine, onu bu tek dosya için tamamen devre dışı bırakıyoruz). -->
-<script>document.write('<script src="events.js?v=' + Date.now() + '"><' + '/script>');</script>
+     ?v= dakikaya yuvarlanmış: AYNI dakika içindeki tekrar ziyaretler/reload'lar
+     tarayıcı önbelleğinden bedavaya gelir (ağa hiç gitmez — "her seferinde
+     zorla indir" değil, akıllı cache). Dakika değişince URL de değişir; o an
+     hem tarayıcı hem GitHub'ın CDN'i bunu "hiç görmemiş yeni istek" sayıp
+     origin'den taze kopya çeker. Yani bir güncelleme en geç ~1 dk içinde
+     garantili yansır, aradaki sürede gereksiz tekrar indirme olmaz. -->
+<script>document.write('<script src="events.js?v=' + Math.floor(Date.now()/60000) + '"><' + '/script>');</script>
 <script>
 /* ================= demo data (used while CONFIG.API_URL is empty) ================= */
 const DEMO_EVENTS = [
@@ -2529,10 +2531,11 @@ const GRADS = [
   'linear-gradient(160deg,#7a8cff 0%,#2438c9 70%,#080b1e 100%)',
 ];
 const hash = s => [...s].reduce((a,c) => (a*31 + c.charCodeAt(0)) >>> 0, 7);
-// Aynı dosya adına yeni bir afiş konduğunda (poster_url metni değişmese bile)
-// eski görsel tarayıcı/CDN'de takılı kalmasın diye her sayfa yüklemesinde
-// posterlere de benzersiz bir sorgu parametresi eklenir.
-const CACHE_BUST = Date.now();
+// Posterler büyük dosyalar ve çok nadir değişir (events.js'ten farklı olarak):
+// saate yuvarlanmış ?v= ile aynı saat içindeki ziyaretler tarayıcı/CDN
+// önbelleğinden bedavaya gelir; aynı dosya adına yeni bir afiş konsa bile
+// (poster_url metni değişmese bile) en geç ~1 saat içinde taze kopya çekilir.
+const CACHE_BUST = Math.floor(Date.now() / 3600000);
 const bustUrl = u => u + (u.includes('?') ? '&' : '?') + 'v=' + CACHE_BUST;
 // Önce gradient placeholder çizilir; gerçek afiş varsa hydratePosters()
 // arka planda yükleyip spinner eşliğinde yerine koyar.
