@@ -2478,8 +2478,12 @@ var qrcode = function() {
 }));</script>
 
 <!-- Statik katalog: parser'ı bloklar, veri ilk kare basılmadan hazır olur (flicker yok).
-     Sheet'te Events/Tiers değişince backend bu dosyayı GitHub'a kendisi commit'ler. -->
-<script src="events.js"></script>
+     Sheet'te Events/Tiers değişince backend bu dosyayı GitHub'a kendisi commit'ler.
+     ?v=timestamp ile her sayfa yüklemesinde YENİ bir URL istenir: ne tarayıcı
+     diskten eskisini verebilir, ne de GitHub'ın CDN'i "bunu daha önce gördüm"
+     diyebilir — her seferinde origin'den taze kopya gelir (GH Pages'in ~10 dk
+     cache'iyle savaşmak yerine, onu bu tek dosya için tamamen devre dışı bırakıyoruz). -->
+<script>document.write('<script src="events.js?v=' + Date.now() + '"><' + '/script>');</script>
 <script>
 /* ================= demo data (used while CONFIG.API_URL is empty) ================= */
 const DEMO_EVENTS = [
@@ -2525,6 +2529,11 @@ const GRADS = [
   'linear-gradient(160deg,#7a8cff 0%,#2438c9 70%,#080b1e 100%)',
 ];
 const hash = s => [...s].reduce((a,c) => (a*31 + c.charCodeAt(0)) >>> 0, 7);
+// Aynı dosya adına yeni bir afiş konduğunda (poster_url metni değişmese bile)
+// eski görsel tarayıcı/CDN'de takılı kalmasın diye her sayfa yüklemesinde
+// posterlere de benzersiz bir sorgu parametresi eklenir.
+const CACHE_BUST = Date.now();
+const bustUrl = u => u + (u.includes('?') ? '&' : '?') + 'v=' + CACHE_BUST;
 // Önce gradient placeholder çizilir; gerçek afiş varsa hydratePosters()
 // arka planda yükleyip spinner eşliğinde yerine koyar.
 function posterStyle(ev) {
@@ -2539,9 +2548,10 @@ function hydratePosters() {
     if (el.dataset.hydrated) return;
     el.dataset.hydrated = '1';
     el.insertAdjacentHTML('beforeend', '<div class="poster-spin"></div>');
+    const bustedUrl = bustUrl(el.dataset.poster);
     const img = new Image();
     img.onload = () => {
-      el.style.backgroundImage = `url('${el.dataset.poster}')`;
+      el.style.backgroundImage = `url('${bustedUrl}')`;
       // 'contain': afişten hiçbir şey kırpılmaz; kutunun oranına (4:5) tam
       // uymayan afişlerde (ör. kare) üst-alt (ya da yan) boşluk kalır, o
       // boşluk kutunun kendi koyu zeminiyle (bezel) dolar — kırpma yok.
@@ -2552,7 +2562,7 @@ function hydratePosters() {
       el.querySelectorAll('.poster-spin, .poster-label').forEach(n => n.remove());
     };
     img.onerror = () => el.querySelectorAll('.poster-spin').forEach(n => n.remove());
-    img.src = el.dataset.poster;
+    img.src = bustedUrl;
   });
 }
 
