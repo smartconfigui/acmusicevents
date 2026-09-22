@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AC Music Events</title>
+<style>body{background:#070A16;color:#EDF0FA;font:14px -apple-system,BlinkMacSystemFont,sans-serif;
+  display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}</style>
+<script>
+  // GitHub Pages statik: acmusicevents.com/event-id gibi doğrudan bilet
+  // linkleri repo'da gerçek bir dosya/klasör olmadığı için buraya düşer.
+  // Yolu ?e= sorgu parametresine gömüp ana sayfaya yönlendiriyoruz;
+  // index.html açılışta bunu çözüp adres çubuğunu /event-id haline geri
+  // döndürür ve o etkinliğin bilet panelini otomatik açar.
+  var id = location.pathname.replace(/^\/|\/$/g, '');
+  location.replace(id ? '/?e=' + encodeURIComponent(id) : '/');
+</script>
+</head>
+<body>Redirecting…</body>
+</html>

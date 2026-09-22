@@ -3,6 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+// 404.html yönlendirme numarasının diğer ucu: acmusicevents.com/event-id
+// linki ?e=event-id olarak buraya düşer. Adres çubuğunu görünürde fark
+// edilmeden tekrar /event-id haline getirir; id, veri gelince ilgili
+// biletin panelini otomatik açmak için saklanır (bkz. loadEvents sonu).
+(function () {
+  var m = location.search.match(/^\?e=([^&]+)$/);
+  if (!m) return;
+  window.__EVENT_FROM_URL = decodeURIComponent(m[1]);
+  history.replaceState(null, '', '/' + window.__EVENT_FROM_URL);
+})();
+</script>
 <title>AC Music Events</title>
 <link rel="preconnect" href="https://script.google.com">
 <link rel="dns-prefetch" href="https://script.google.com">
@@ -2788,6 +2800,8 @@ function renderBuyForm() {
         <p class="font-mono text-[11px] uppercase tracking-[.2em] text-glow">Tickets</p>
         <h3 id="buy-title" class="display text-3xl uppercase leading-tight mt-1">${esc(ev.title)}</h3>
         <p class="text-dim text-sm mt-1">${p.dow} · ${p.mon} ${p.day} · ${p.time} — ${esc(ev.venue)}</p>
+        <button type="button" onclick="copyEventLink('${esc(ev.event_id)}')" id="share-link"
+                class="font-mono text-[10px] uppercase tracking-[.2em] text-dim hover:text-neonsoft underline underline-offset-2 mt-2">Copy link to this show</button>
       </div>
       <button onclick="closeBuy()" aria-label="Close" class="text-dim hover:text-paper text-2xl leading-none px-2">×</button>
     </div>
@@ -3302,6 +3316,20 @@ function copyCode(code) {
   navigator.clipboard && navigator.clipboard.writeText(code);
 }
 
+/* Her etkinliğin kendi paylaşılabilir linki: acmusicevents.com/event-id
+   (404.html + yukarıdaki ?e= çözücü sayesinde doğrudan o biletin panelini
+   açar). Butonun metnini geçici olarak "Copied!" yapıp geri döndürür. */
+function copyEventLink(id) {
+  if (!navigator.clipboard) return;
+  const btn = document.getElementById('share-link');
+  navigator.clipboard.writeText(location.origin + '/' + id).then(() => {
+    if (!btn) return;
+    const t = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = t; }, 1500);
+  });
+}
+
 /* ================= boot ================= */
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-buy]');
@@ -3401,6 +3429,18 @@ async function loadEvents() {
     if (!CONFIG.API_URL || !(await fetchFullEvents())) { EVENTS = DEMO_EVENTS; dataState = 'fallback'; }
     render(EVENTS);
     hideSplash();
+  }
+  // Doğrudan acmusicevents.com/event-id linkiyle gelindiyse (bkz. <head>'teki
+  // ?e= çözücü) o etkinliğin bilet panelini otomatik aç — ama yalnızca
+  // gerçekten satın alınabilirse (iç satış, tükenmemiş); değilse sayfa
+  // normal ana sayfa gibi açılır, hiçbir hata göstermez.
+  if (window.__EVENT_FROM_URL) {
+    const id = window.__EVENT_FROM_URL;
+    window.__EVENT_FROM_URL = null;
+    const ev = EVENTS.find(e => e.event_id === id);
+    if (ev && parseDT(ev.date_time) >= new Date() && !soldOut(ev) && !String(ev.ticket_url || '').trim() && ev.tiers && ev.tiers.length) {
+      openBuy(id);
+    }
   }
   if (pendingBuyId) { const id = pendingBuyId; pendingBuyId = null; openBuy(id); }
 }
