@@ -16,6 +16,23 @@
 })();
 </script>
 <title>AC Music Events</title>
+<!-- Google Analytics (GA4): her etkinlik ayrı "item" olarak izlenir (item_id=event_id).
+     view_item (bilet paneli açılır), begin_checkout (bir "Pay with…"a basılır),
+     add_payment_info (Venmo'ya yönlenir). purchase EN client-side ATILMAZ —
+     tek doğruluk kaynağı backend'dir (bkz. Code.gs sendGaPurchase_): Venmo/kart/
+     elle onay hangi yoldan gelirse gelsin sipariş GERÇEKTEN confirmed olduğunda,
+     tek noktadan, çift saymadan gönderilir. -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-PQSVBDHQ06"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag() { dataLayer.push(arguments); }
+  gtag('js', new Date());
+  gtag('config', 'G-PQSVBDHQ06');
+  // Sipariş oluşturulurken backend'e gönderilir; backend confirmed olunca
+  // AYNI ziyaretçiye/oturuma bağlı bir "purchase" hit'i atabilsin diye.
+  var GA_CID = '';
+  try { gtag('get', 'G-PQSVBDHQ06', 'client_id', function (cid) { GA_CID = cid || ''; }); } catch (e) {}
+</script>
 <link rel="preconnect" href="https://script.google.com">
 <link rel="dns-prefetch" href="https://script.google.com">
 <link rel="icon" type="image/png" href="assets/favicon.png">
@@ -2529,6 +2546,9 @@ const DEMO_EVENTS = [
 /* ================= helpers ================= */
 const $ = (s, el=document) => el.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// GA4'e event yollar; her zaman sessiz başarısız olur (reklam engelleyici,
+// gtag hiç yüklenmemiş vb. hiçbir zaman satın alma akışını bozmasın).
+function gaEvent(name, params) { try { gtag('event', name, params); } catch (e) {} }
 // Events sheet'indeki opsiyonel kısa açıklama; boşsa hiçbir şey basılmaz.
 const descHtml = (ev, cls) => { const d = String(ev.description || '').trim(); return d ? `<p class="${cls}">${esc(d)}</p>` : ''; };
 const parseDT = s => new Date(s.replace(' ', 'T'));
@@ -2798,6 +2818,9 @@ function closeBuy() {
 function renderBuyForm() {
   const ev = currentEvent;
   const p = fmtParts(parseDT(ev.date_time));
+  const t0 = tiersOf(ev)[selectedTierIdx] || {};
+  gaEvent('view_item', { currency: 'USD', value: t0.price || 0,
+    items: [{ item_id: ev.event_id, item_name: ev.title, item_variant: t0.name || '', price: t0.price || 0 }] });
   $('#buy-content').innerHTML = `
     <div class="flex items-start justify-between mb-6">
       <div>
@@ -2914,9 +2937,12 @@ async function submitOrder(e) {
     qty,
     tier: curTier().id,
     tier_name: curTier().name,
+    ga_client_id: GA_CID,
   };
   const method = (e.submitter && e.submitter.value) || 'venmo';
   f.querySelectorAll('[type=submit]').forEach(b => { b.disabled = true; });
+  gaEvent('begin_checkout', { currency: 'USD', value: qty * curTier().price, payment_type: method,
+    items: [{ item_id: currentEvent.event_id, item_name: currentEvent.title, item_variant: curTier().name, price: curTier().price, quantity: qty }] });
 
   // ANINDA ekran değiştir: kart seçildiyse form hemen kurulmaya başlar,
   // sipariş kaydı arka planda paralel oluşur (donma hissi yok).
@@ -2981,6 +3007,8 @@ function demoCreateOrder(order) {
 
 function renderVenmoStep(o) {
   if (o.demo && !CONFIG.VENMO_READY) { renderReserveStep(o); return; }
+  gaEvent('add_payment_info', { currency: 'USD', value: Number(o.amount_due), payment_type: 'venmo',
+    items: [{ item_id: currentEvent.event_id, item_name: currentEvent.title, item_variant: o.tier_name, quantity: o.qty }] });
   const venmoUrl = `https://venmo.com/${CONFIG.VENMO_HANDLE}?txn=pay&amount=${o.amount_due}&note=${encodeURIComponent(o.ref_code)}`;
   // Until the backend records orders, ask the buyer to email their details after paying.
   const orderMail = o.demo ? `mailto:${CONFIG.CONTACT_EMAIL}?subject=${encodeURIComponent(`Order ${o.ref_code} - ${currentEvent.title}`)}&body=${encodeURIComponent(`Paid via Venmo.\n\nCode: ${o.ref_code}\nName: ${o.name}\nEmail: ${o.email}\nTicket type: ${o.tier_name}\nTickets: ${o.qty}\nTotal: $${o.amount_due}`)}` : '';
@@ -3231,7 +3259,10 @@ async function expressPay(kind) {
     qty,
     tier: curTier().id,
     tier_name: curTier().name,
+    ga_client_id: GA_CID,
   };
+  gaEvent('begin_checkout', { currency: 'USD', value: qty * curTier().price, payment_type: kind === 'ap' ? 'apple_pay' : 'google_pay',
+    items: [{ item_id: currentEvent.event_id, item_name: currentEvent.title, item_variant: curTier().name, price: curTier().price, quantity: qty }] });
   // Sipariş kaydını hemen başlat ama BEKLEME: cüzdan sayfası kullanıcı
   // hareketi içinde anında açılmalı. (Ödeme action=pay'de çekilir; sipariş
   // oluşmazsa hiçbir tahsilat yapılmaz.)

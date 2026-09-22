@@ -23,12 +23,13 @@ var PENDING_TTL_HOURS = 24;
 var CHECKIN_URL = 'https://acmusicevents.com/checkin/'; // bilet QR'ının açtığı sayfa
 var DOOR_PASS = '1453'; // kapı/check-in sayfası şifresi (statik)
 var OVERSELL_MAX = 3;   // tek sipariş, kademe kalanının en fazla bu kadar üzerine çıkabilir
+var GA_MEASUREMENT_ID = 'G-PQSVBDHQ06'; // gizli değil, GA4'ün ölçüm kimliği
 
 var EVENTS_HEADERS = ['event_id', 'title', 'date_time', 'venue', 'capacity', 'status', 'poster_url', 'ticket_url', 'description'];
 var TIERS_HEADERS  = ['event_id', 'tier_id', 'tier_name', 'price', 'cap', 'sold_elsewhere', 'square_link'];
 var ORDERS_HEADERS = ['order_id', 'created_at', 'event_id', 'tier_id', 'tier_name', 'name', 'email',
                       'qty', 'amount_due', 'ref_code', 'status', 'confirmed_at', 'checked_in_at', 'notes',
-                      'checked_in_count'];
+                      'checked_in_count', 'ga_client_id'];
 var ORDER_STATUSES = ['pending', 'confirmed', 'checked_in', 'expired', 'cancelled'];
 
 /* ============================== KURULUM ============================== */
@@ -52,6 +53,13 @@ function setup() {
   // Kısmi check-in kolonu (mevcut sayfalara sonradan eklenir)
   if (String(orders.getRange(1, 15).getValue()) !== 'checked_in_count') {
     orders.getRange(1, 15).setValue('checked_in_count').setFontWeight('bold');
+  }
+
+  // GA4 client_id kolonu (mevcut sayfalara sonradan eklenir): siparişi
+  // oluşturan ziyaretçiye bağlı kimlik — sipariş gerçekten confirmed
+  // olduğunda GA4'e "purchase" atarken kullanılır (bkz. sendGaPurchase_).
+  if (String(orders.getRange(1, 16).getValue()) !== 'ga_client_id') {
+    orders.getRange(1, 16).setValue('ga_client_id').setFontWeight('bold');
   }
 
   // description kolonu (opsiyonel, mevcut sayfalara sonradan eklenir)
@@ -365,7 +373,8 @@ function createOrder_(b) {
     var now = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
 
     orders.appendRow([n, now, String(b.event_id), String(tier[1]), String(tier[2]),
-                      name, email, qty, amount, ref, 'pending', '', '', '']);
+                      name, email, qty, amount, ref, 'pending', '', '', '', '',
+                      String(b.ga_client_id || '').slice(0, 40)]);
     bustCache_(); // kontenjan değişti, önbellekleri tazele
     // Gömülü kart formu kuruluysa (APP_ID var) hosted yedek linki üretme — her siparişten ~1 sn kazandırır.
     var cardUrl = sqPublic_().app ? '' :
@@ -555,6 +564,41 @@ function sendTicket_(o) {
     htmlBody: html,
     name: 'AC Music Events',
   });
+
+  // sendTicket_ = siparişin GERÇEKTEN confirmed olduğu TEK nokta (Venmo/kart/
+  // elle onay hangi yoldan gelirse gelsin buraya düşer) — GA4'e "purchase"
+  // burada, tek seferde atılır. Asla bileti engellemez (kendi try/catch'i var).
+  try { sendGaPurchase_(o, ev); } catch (e) {}
+}
+
+/** Sipariş gerçekten onaylandığında GA4'e sunucu taraftan "purchase" atar
+ *  (Measurement Protocol). Client_id yoksa (GA engellenmiş/eski sipariş) ya
+ *  da GA_API_SECRET tanımlı değilse sessizce atlar — hiçbir zaman hata fırlatmaz. */
+function sendGaPurchase_(o, ev) {
+  var cid = String(o[15] || '').trim();
+  if (!cid) return;
+  var secret = PropertiesService.getScriptProperties().getProperty('GA_API_SECRET');
+  if (!secret) return;
+  var qty = Number(o[7]) || 1;
+  UrlFetchApp.fetch(
+    'https://www.google-analytics.com/mp/collect?measurement_id=' + GA_MEASUREMENT_ID + '&api_secret=' + secret,
+    {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      payload: JSON.stringify({
+        client_id: cid,
+        events: [{
+          name: 'purchase',
+          params: {
+            transaction_id: String(o[9]), currency: 'USD', value: Number(o[8]) || 0,
+            items: [{
+              item_id: String(o[2]), item_name: String((ev && ev[1]) || o[2]),
+              item_variant: String(o[4]), price: (Number(o[8]) || 0) / qty, quantity: qty,
+            }],
+          },
+        }],
+      }),
+    }
+  );
 }
 
 function trow_(k, v) {

@@ -81,6 +81,16 @@ Orders sayfasına `pending` olarak düşürür.
   onaylanmaz, fark Orders'ın notes kolonuna yazılır.
 - **Süre aşımı:** 24 saatten eski `pending` siparişler otomatik `expired` olur,
   kontenjan geri açılır.
+- **Google Analytics (GA4, opsiyonel — her etkinlik ayrı takip edilir):** Site
+  zaten `G-PQSVBDHQ06`'ya sayfa görüntülemesi + `view_item`/`begin_checkout`/
+  `add_payment_info` gönderiyor (item_id = event_id, GA4'te Monetization
+  raporlarında etkinlik bazlı kırılım için). Gerçek **purchase** ise Venmo/
+  kart/elle onay hangi yoldan gelirse gelsin, sipariş GERÇEKTEN confirmed
+  olduğu TEK noktadan (backend, `sendGaPurchase_`) atılır — tekrar sayma
+  veya erken sayma olmaz. Bunu açmak için: GA4 → Admin → Data Streams →
+  ilgili stream → **Measurement Protocol API secrets** → Create → değeri
+  Apps Script → Project Settings → **Script Properties**'e `GA_API_SECRET`
+  adıyla ekle. Eklenmezse hiçbir şey bozulmaz, sadece purchase verisi gitmez.
 - **Pending/Confirmed/Archive sekmeleri:** `setup()` bunları otomatik oluşturur —
   Orders'ı statüye göre filtreleyen canlı, salt-okunur görünümlerdir (QUERY
   formülü). Orders TEK kaynak olmaya devam eder, otomasyon hep oraya yazar;
