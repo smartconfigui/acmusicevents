@@ -59,6 +59,20 @@ function setup() {
     events.getRange(1, 9).setValue('description').setFontWeight('bold');
   }
 
+  // Statüye göre salt-okunur canlı görünümler: Orders TEK kaynak kalır
+  // (tüm otomasyon oraya yazar), bu sekmeler yalnızca QUERY ile filtreler —
+  // veri kopyalanmaz/taşınmaz, elle düzenlenemez, her zaman güncel.
+  ensureQuerySheet_(ss, 'Pending',
+    "=QUERY(Orders!A:O, \"select * where K='pending' order by B asc\", 1)");
+  ensureQuerySheet_(ss, 'Confirmed',
+    "=QUERY(Orders!A:O, \"select * where K='confirmed' order by B desc\", 1)");
+  ensureQuerySheet_(ss, 'Archive',
+    "=QUERY(Orders!A:O, \"select * where K='cancelled' or K='expired' order by B desc\", 1)");
+
+  // Orders'ta statüye göre satır rengi (ilk kurulumda bir kez uygulanır;
+  // sonradan elle değiştirirsen tekrar setup() çalıştırmak üzerine yazmaz).
+  if (orders.getConditionalFormatRules().length === 0) applyOrderColors_(orders);
+
   // YAZZ etkinliğini tohumla (Events boşsa)
   if (events.getLastRow() < 2) {
     events.appendRow(['sf-neck-sep19', 'YAZZ', '2026-09-19 20:00',
@@ -89,6 +103,34 @@ function ensureSheet_(ss, name, headers) {
     sh.setFrozenRows(1);
   }
   return sh;
+}
+
+/** Orders'ı statüye göre filtreleyen salt-okunur görünüm sekmesi. Sekme yoksa
+ *  oluşturur; A1 boşsa formülü yazar — elle bir şey yazılmışsa üzerine yazmaz. */
+function ensureQuerySheet_(ss, name, formula) {
+  var sh = ss.getSheetByName(name) || ss.insertSheet(name);
+  if (String(sh.getRange('A1').getFormula() || sh.getRange('A1').getValue()) === '') {
+    sh.getRange('A1').setFormula(formula);
+  }
+  return sh;
+}
+
+/** Orders'ta status kolonuna (K) göre satır rengi: pending sarı, confirmed
+ *  yeşil, checked_in mavi, cancelled/expired gri. Yalnızca ilk kurulumda
+ *  (henüz hiç kural yokken) uygulanır — sonradan elle değiştirilirse dokunmaz. */
+function applyOrderColors_(orders) {
+  var range = orders.getRange('A2:O2000');
+  var rules = [
+    ['pending', '#FFF3C4'], ['confirmed', '#C8F0D8'],
+    ['checked_in', '#C9E4FF'], ['cancelled', '#E6E6E6'], ['expired', '#E6E6E6'],
+  ].map(function (sc) {
+    return SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=$K2="' + sc[0] + '"')
+      .setBackground(sc[1])
+      .setRanges([range])
+      .build();
+  });
+  orders.setConditionalFormatRules(rules);
 }
 
 /* ============================== HTTP UÇLARI ============================== */

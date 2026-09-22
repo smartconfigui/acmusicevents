@@ -81,6 +81,12 @@ Orders sayfasına `pending` olarak düşürür.
   onaylanmaz, fark Orders'ın notes kolonuna yazılır.
 - **Süre aşımı:** 24 saatten eski `pending` siparişler otomatik `expired` olur,
   kontenjan geri açılır.
+- **Pending/Confirmed/Archive sekmeleri:** `setup()` bunları otomatik oluşturur —
+  Orders'ı statüye göre filtreleyen canlı, salt-okunur görünümlerdir (QUERY
+  formülü). Orders TEK kaynak olmaya devam eder, otomasyon hep oraya yazar;
+  bu sekmeler sadece bakması kolay olsun diye filtrelenmiş kopyalardır, elle
+  düzenlenmez. Ayrıca Orders'ta satırlar statüye göre otomatik renklenir
+  (sarı=pending, yeşil=confirmed, mavi=checked_in, gri=cancelled/expired).
 - **Statik event listesi (hızlı açılış, opsiyonel ama önerilir):** Site, event
   listesini kendi domain'indeki `events.js`'ten okur (ilk kare basılmadan hazır, flicker yok); canlı
   bilet adetleri hafif `?action=avail` ucundan gelir. Sheet'te Events/Tiers
