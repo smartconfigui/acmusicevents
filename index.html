@@ -119,6 +119,10 @@
   @media (prefers-reduced-motion: reduce) { #splash img, #splash .splash-word { animation:none; } }
   /* hide honeypot from humans, keep it for bots */
   .hp { position:absolute; left:-5000px; height:1px; width:1px; overflow:hidden; }
+  /* etkinlik kutusunun HERHANGİ bir yerine tıklamak da bileti açar (görünüm
+     aynı kalır); kutunun üstüne gelince buton da aydınlanır — sanki direkt
+     butona gelinmiş gibi (hover:bg-neonsoft + hover:shadow-neon ile birebir). */
+  .ev-card:hover .ev-cta { background-color:#93A2FF; box-shadow:0 0 24px rgba(91,108,255,.45),0 0 64px rgba(91,108,255,.18); }
   /* cüzdan butonları (Apple Pay yalnızca Safari'de çizilir) */
   #apple-pay-btn { -webkit-appearance:-apple-pay-button; -apple-pay-button-type:pay;
                    -apple-pay-button-style:white; display:block; width:100%; height:44px;
@@ -169,7 +173,7 @@ const CONFIG = {
 
 <!-- hero: next show -->
 <section id="top" class="max-w-5xl mx-auto px-4 pt-14 pb-16">
-  <div id="hero" class="grid md:grid-cols-[1fr_320px] gap-10 items-center"><!-- js --></div>
+  <div id="hero" class="ev-card grid md:grid-cols-[1fr_320px] gap-10 items-center"><!-- js --></div>
 </section>
 
 <!-- upcoming -->
@@ -2686,6 +2690,8 @@ function buyCta(ev, cls) {
 function renderHero(ev) {
   const el = $('#hero');
   if (!ev) {
+    el.classList.remove('cursor-pointer');
+    delete el.dataset.cardBuy; delete el.dataset.cardLink;
     el.innerHTML = `<div><p class="font-mono text-xs uppercase tracking-[.25em] text-glow mb-4">Next show</p>
       <h1 class="display text-5xl md:text-7xl leading-none">NEW DATES<br>COMING SOON</h1>
       <p class="mt-5 text-dim max-w-[46ch]">Follow us on Instagram to hear about the next night first.</p></div>`;
@@ -2693,6 +2699,12 @@ function renderHero(ev) {
   }
   const p = fmtParts(parseDT(ev.date_time));
   const out = soldOut(ev);
+  // Kutunun HERHANGİ bir yerine tıklamak da bileti açsın (buton üzerinde durmuyor).
+  const heroTicketUrl = String(ev.ticket_url || '').trim();
+  const heroBuyable = !out && (heroTicketUrl || (ev.tiers && ev.tiers.length));
+  el.classList.toggle('cursor-pointer', heroBuyable);
+  delete el.dataset.cardBuy; delete el.dataset.cardLink;
+  if (heroBuyable) { if (heroTicketUrl) el.dataset.cardLink = heroTicketUrl; else el.dataset.cardBuy = ev.event_id; }
   el.innerHTML = `
     <div>
       <p class="font-mono text-xs uppercase tracking-[.25em] text-glow mb-4">Next show</p>
@@ -2703,7 +2715,7 @@ function renderHero(ev) {
       <div class="mt-8 flex items-center gap-5">
         ${out
           ? `<span class="font-mono text-sm uppercase tracking-[.2em] border border-line text-dim px-5 py-3">Sold out</span>`
-          : `${buyCta(ev, 'bg-neon text-night display text-xl uppercase px-8 py-3 shadow-neon hover:bg-neonsoft')}
+          : `${buyCta(ev, 'ev-cta bg-neon text-night display text-xl uppercase px-8 py-3 shadow-neon hover:bg-neonsoft')}
              <span class="font-mono text-sm text-dim">${priceLabel(ev)}</span>`}
       </div>
     </div>
@@ -2723,8 +2735,12 @@ function renderUpcoming(list) {
     const out = soldOut(ev);
     const left = eventLeft(ev);
     const low = !out && isFinite(left) && ev.capacity && left <= ev.capacity * 0.15;
+    // Kutunun HERHANGİ bir yerine tıklamak da bileti açsın (buton üzerinde durmuyor).
+    const ticketUrl = String(ev.ticket_url || '').trim();
+    const buyable = !out && (ticketUrl || (ev.tiers && ev.tiers.length));
+    const cardAttr = !buyable ? '' : ticketUrl ? `data-card-link="${esc(ticketUrl)}"` : `data-card-buy="${esc(ev.event_id)}"`;
     return `
-    <article class="flex bg-panel border border-line ${out ? 'opacity-60' : ''}">
+    <article class="ev-card flex bg-panel border border-line ${out ? 'opacity-60' : ''} ${buyable ? 'cursor-pointer' : ''}" ${cardAttr}>
       <div class="perf shrink-0 w-24 sm:w-28 px-2 py-3 flex flex-col justify-center text-center font-mono">
         <span class="text-[10px] uppercase tracking-[.1em] text-glow">${p.dow}</span>
         <span class="display text-5xl leading-none my-1">${p.day}</span>
@@ -2742,7 +2758,7 @@ function renderUpcoming(list) {
             ? `<span class="font-mono text-[11px] uppercase tracking-[.2em] border border-line text-dim px-3 py-1.5">Sold out</span>`
             : `${low ? `<span class="font-mono text-[11px] uppercase tracking-[.2em] text-glow">Few left</span>` : ''}
                <span class="font-mono text-sm text-dim">${priceLabel(ev)}</span>
-               ${buyCta(ev, 'bg-neon text-night font-mono text-xs font-semibold uppercase tracking-[.15em] px-4 py-2.5 hover:bg-neonsoft hover:shadow-neon')}`}
+               ${buyCta(ev, 'ev-cta bg-neon text-night font-mono text-xs font-semibold uppercase tracking-[.15em] px-4 py-2.5 hover:bg-neonsoft hover:shadow-neon')}`}
         </div>
       </div>
     </article>`;
@@ -3369,7 +3385,14 @@ function copyEventLink(id) {
 /* ================= boot ================= */
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-buy]');
-  if (b) { openBuy(b.dataset.buy); }
+  if (b) { openBuy(b.dataset.buy); return; }
+  // Kutunun geri kalanına tıklama: içeride zaten bir <a> varsa (dış bilet
+  // linki) tarayıcının kendi tıklaması yeter — burada tekrar açmıyoruz,
+  // yoksa çift sekme açılır.
+  const link = e.target.closest('[data-card-link]');
+  if (link && !e.target.closest('a')) { window.open(link.dataset.cardLink, '_blank', 'noopener'); return; }
+  const card = e.target.closest('[data-card-buy]');
+  if (card) openBuy(card.dataset.cardBuy);
 });
 $('#buy-overlay').addEventListener('click', closeBuy);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeBuy(); });
