@@ -2529,6 +2529,8 @@ const DEMO_EVENTS = [
 /* ================= helpers ================= */
 const $ = (s, el=document) => el.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Events sheet'indeki opsiyonel kısa açıklama; boşsa hiçbir şey basılmaz.
+const descHtml = (ev, cls) => { const d = String(ev.description || '').trim(); return d ? `<p class="${cls}">${esc(d)}</p>` : ''; };
 const parseDT = s => new Date(s.replace(' ', 'T'));
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -2677,6 +2679,7 @@ function renderHero(ev) {
       <h1 class="display text-6xl md:text-8xl leading-[.95] uppercase">${esc(ev.title)}</h1>
       <p class="mt-5 font-mono text-sm text-neonsoft">${p.dow} · ${p.mon} ${p.day} · ${p.time}</p>
       <p class="mt-1 text-dim">${esc(ev.venue)}</p>
+      ${descHtml(ev, 'mt-3 text-dim text-sm max-w-[46ch] leading-relaxed')}
       <div class="mt-8 flex items-center gap-5">
         ${out
           ? `<span class="font-mono text-sm uppercase tracking-[.2em] border border-line text-dim px-5 py-3">Sold out</span>`
@@ -2712,6 +2715,7 @@ function renderUpcoming(list) {
         <div class="flex-1 min-w-0">
           <h3 class="display text-2xl uppercase leading-tight">${esc(ev.title)}</h3>
           <p class="text-dim text-sm mt-1">${esc(ev.venue)}</p>
+          ${descHtml(ev, 'text-dim text-xs mt-1 leading-relaxed')}
         </div>
         <div class="flex items-center gap-4 shrink-0">
           ${out
@@ -2800,6 +2804,7 @@ function renderBuyForm() {
         <p class="font-mono text-[11px] uppercase tracking-[.2em] text-glow">Tickets</p>
         <h3 id="buy-title" class="display text-3xl uppercase leading-tight mt-1">${esc(ev.title)}</h3>
         <p class="text-dim text-sm mt-1">${p.dow} · ${p.mon} ${p.day} · ${p.time} — ${esc(ev.venue)}</p>
+        ${descHtml(ev, 'text-dim text-sm mt-2 leading-relaxed')}
         <button type="button" onclick="copyEventLink('${esc(ev.event_id)}')" id="share-link"
                 class="font-mono text-[10px] uppercase tracking-[.2em] text-dim hover:text-neonsoft underline underline-offset-2 mt-2">Copy link to this show</button>
       </div>

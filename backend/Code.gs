@@ -24,7 +24,7 @@ var CHECKIN_URL = 'https://acmusicevents.com/checkin/'; // bilet QR'ının açt�
 var DOOR_PASS = '1453'; // kapı/check-in sayfası şifresi (statik)
 var OVERSELL_MAX = 3;   // tek sipariş, kademe kalanının en fazla bu kadar üzerine çıkabilir
 
-var EVENTS_HEADERS = ['event_id', 'title', 'date_time', 'venue', 'capacity', 'status', 'poster_url', 'ticket_url'];
+var EVENTS_HEADERS = ['event_id', 'title', 'date_time', 'venue', 'capacity', 'status', 'poster_url', 'ticket_url', 'description'];
 var TIERS_HEADERS  = ['event_id', 'tier_id', 'tier_name', 'price', 'cap', 'sold_elsewhere', 'square_link'];
 var ORDERS_HEADERS = ['order_id', 'created_at', 'event_id', 'tier_id', 'tier_name', 'name', 'email',
                       'qty', 'amount_due', 'ref_code', 'status', 'confirmed_at', 'checked_in_at', 'notes',
@@ -52,6 +52,11 @@ function setup() {
   // Kısmi check-in kolonu (mevcut sayfalara sonradan eklenir)
   if (String(orders.getRange(1, 15).getValue()) !== 'checked_in_count') {
     orders.getRange(1, 15).setValue('checked_in_count').setFontWeight('bold');
+  }
+
+  // description kolonu (opsiyonel, mevcut sayfalara sonradan eklenir)
+  if (String(events.getRange(1, 9).getValue()) !== 'description') {
+    events.getRange(1, 9).setValue('description').setFontWeight('bold');
   }
 
   // YAZZ etkinliğini tohumla (Events boşsa)
@@ -207,7 +212,7 @@ function availMap_() {
 function catalogRev_() {
   var evs = rows_('Events')
     .filter(function (r) { return String(r[5]) === 'active'; })
-    .map(function (r) { return [String(r[0]), String(r[1]), dateStr_(r[2]), String(r[3]), String(r[6] || ''), String(r[7] || '')]; });
+    .map(function (r) { return [String(r[0]), String(r[1]), dateStr_(r[2]), String(r[3]), String(r[6] || ''), String(r[7] || ''), String(r[8] || '')]; });
   var tiers = rows_('Tiers')
     .map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]), String(r[6] || '')]; });
   var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify([evs, tiers]));
@@ -277,6 +282,7 @@ function getEvents_() {
         venue: String(r[3]), capacity: Number(r[4] || 0),
         status: 'active', poster_url: String(r[6] || ''),
         ticket_url: String(r[7] || ''), // doluysa satış dış sitede: buton oraya link olur
+        description: String(r[8] || ''), // opsiyonel kısa açıklama (ana sayfa + bilet paneli)
         tiers: tiersByEvent[r[0]] || [],
       };
     });

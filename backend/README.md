@@ -36,6 +36,9 @@ Orders sayfasına `pending` olarak düşürür.
 - **Onay:** Venmo'da ödemeyi gör → Orders'ta ilgili satırın `status` hücresini
   `confirmed` yap → QR'lı bilet maili otomatik gider (`confirmed_at` dolar).
 - **Yeni etkinlik:** Events'e 1 satır + Tiers'a kademeleri ekle. Kod değişikliği yok.
+- **Açıklama (opsiyonel):** Events'in `description` kolonuna kısa bir cümle
+  yazarsan ana sayfada (öne çıkan/yaklaşan gösteriler) ve bilet panelinde
+  başlığın altında görünür. Boş bırakılırsa hiçbir şey gösterilmez.
 - **Dışarıdan satış:** Tiers'ta `sold_elsewhere` sayısını artır — kontenjan düşer.
 - **Kartla ödeme (Square, otomatik tam tutar):** bir kez kurulum —
   [developer.squareup.com](https://developer.squareup.com) → uygulama oluştur →
