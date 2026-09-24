@@ -2787,9 +2787,11 @@ function renderUpcoming(list) {
     const posterUrl = String(ev.poster_url || '').trim();
     // Afiş yoksa da AYNI boyutta kutu basılır (beyaz AC mark ile) — hizalar
     // her satırda aynı kalır, sadece tıklanabilir/büyüyebilir olma farkı var.
+    // Afiş yoksa arka plan gradyan DEĞİL, şeffaf (kartın kendi rengi
+    // görünür) — gradyan sadece afiş yüklenene kadarki bekleme placeholder'ı.
     const thumb = `
       <div class="ev-thumb ${posterUrl ? 'ev-thumb-zoom' : ''} relative shrink-0 border border-line"
-           style="${posterStyle(ev)}" ${posterUrl ? `data-poster="${esc(posterUrl)}" data-poster-zoom="${esc(posterUrl)}" title="View poster"` : ''}>
+           ${posterUrl ? `style="${posterStyle(ev)}" data-poster="${esc(posterUrl)}" data-poster-zoom="${esc(posterUrl)}" title="View poster"` : ''}>
         ${posterUrl ? '' : '<img src="assets/logo-mark-white.png" alt="" class="poster-label poster-mark" onerror="this.remove()">'}
       </div>`;
     return `
