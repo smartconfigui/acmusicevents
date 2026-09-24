@@ -123,9 +123,13 @@
      aynı kalır); kutunun üstüne gelince buton da aydınlanır — sanki direkt
      butona gelinmiş gibi (hover:bg-neonsoft + hover:shadow-neon ile birebir). */
   .ev-card:hover .ev-cta { background-color:#93A2FF; box-shadow:0 0 24px rgba(91,108,255,.45),0 0 64px rgba(91,108,255,.18); }
-  /* Liste satırındaki küçük afiş thumbnail'i (derlenmiş Tailwind'de karşılığı
-     olmayan boyut/cursor değerleri için elle CSS — purge'e takılmasın). */
-  .ev-thumb { width:56px; height:56px; align-self:center; }
+  /* Liste satırındaki küçük afiş thumbnail'i: tarih bloğuyla (.perf) AYNI
+     yükseklikte (kare) olmalı. Flex satırında aspect-ratio ile stretch
+     birbirine güvenilir şekilde bağlanmıyor (genişlik içerik olmadığı için
+     sıfıra çöküyor) — bu yüzden JS'te syncThumbSizes() .perf'in gerçek
+     piksel yüksekliğini ölçüp buraya birebir uyguluyor. Bu değer o an
+     hazır olmadan önceki ilk boyama için düşecek makul bir başlangıç. */
+  .ev-thumb { width:120px; height:120px; align-self:center; }
   .ev-thumb.ev-thumb-zoom { cursor:zoom-in; }
   .ev-thumb.ev-thumb-zoom:hover { opacity:.8; }
   #poster-lightbox { cursor:zoom-out; }
@@ -2642,10 +2646,32 @@ function render(events) {
   renderUpcoming(upcoming);
   renderPast(past);
   hydratePosters();
+  syncThumbSizes();
   $('#contact-email').href = 'mailto:' + CONFIG.CONTACT_EMAIL;
   $('#contact-email').textContent = CONFIG.CONTACT_EMAIL;
   $('#ig-link').href = CONFIG.INSTAGRAM;
 }
+
+/* Afiş thumbnail'i (.ev-thumb) tarih bloğuyla (.perf) aynı yükseklikte
+   (kare) görünsün diye .perf'in gerçek piksel yüksekliğini ölçüp birebir
+   uygular. Satır yüksekliği içerik/font/ekran genişliğine göre değiştiği
+   için render sonrası, font yüklenince ve pencere boyu değişince tekrar
+   çalışır (resize debounce'lı). */
+function syncThumbSizes() {
+  document.querySelectorAll('#upcoming article').forEach(a => {
+    const perf = a.querySelector('.perf');
+    const thumb = a.querySelector('.ev-thumb');
+    if (!perf || !thumb) return;
+    const h = Math.round(perf.getBoundingClientRect().height);
+    if (h > 0) { thumb.style.width = h + 'px'; thumb.style.height = h + 'px'; }
+  });
+}
+let thumbSyncTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(thumbSyncTimer);
+  thumbSyncTimer = setTimeout(syncThumbSizes, 120);
+});
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(syncThumbSizes).catch(() => {});
 
 /* API cevabı gelene kadar sayfanın silüeti: iskelet bloklar + shimmer. */
 function sk(w, h) { return `<div class="sk" style="width:${w};height:${h}"></div>`; }
