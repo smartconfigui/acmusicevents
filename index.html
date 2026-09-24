@@ -123,6 +123,14 @@
      aynı kalır); kutunun üstüne gelince buton da aydınlanır — sanki direkt
      butona gelinmiş gibi (hover:bg-neonsoft + hover:shadow-neon ile birebir). */
   .ev-card:hover .ev-cta { background-color:#93A2FF; box-shadow:0 0 24px rgba(91,108,255,.45),0 0 64px rgba(91,108,255,.18); }
+  /* Liste satırındaki küçük afiş thumbnail'i (derlenmiş Tailwind'de karşılığı
+     olmayan boyut/cursor değerleri için elle CSS — purge'e takılmasın). */
+  .ev-thumb { width:56px; height:56px; align-self:center; }
+  .ev-thumb.ev-thumb-zoom { cursor:zoom-in; }
+  .ev-thumb.ev-thumb-zoom:hover { opacity:.8; }
+  #poster-lightbox { cursor:zoom-out; }
+  #poster-lightbox-img { max-width:100%; max-height:100%; }
+  .lightbox-close { position:absolute; top:16px; right:16px; }
   /* cüzdan butonları (Apple Pay yalnızca Safari'de çizilir) */
   #apple-pay-btn { -webkit-appearance:-apple-pay-button; -apple-pay-button-type:pay;
                    -apple-pay-button-style:white; display:block; width:100%; height:44px;
@@ -210,6 +218,15 @@ const CONFIG = {
        role="dialog" aria-modal="true" aria-labelledby="buy-title">
   <div class="p-6" id="buy-content"><!-- js --></div>
 </aside>
+
+<!-- poster lightbox: liste thumbnail'ine tıklanınca afiş büyür. DOM'da
+     buy panel'den SONRA durur ki ikisi de açıksa (masaüstünde mümkün,
+     panel 420px'lik bir şerit) aynı z-50'de bile üstte kalsın. -->
+<div id="poster-lightbox" class="fixed inset-0 z-50 bg-black/70 hidden items-center justify-center p-6">
+  <button type="button" onclick="closePosterLightbox()" aria-label="Close"
+          class="lightbox-close text-dim hover:text-paper text-2xl leading-none px-2">×</button>
+  <img id="poster-lightbox-img" src="" alt="Poster">
+</div>
 
 <!-- qrcode-generator library (inlined; no external dependency) -->
 <script>//---------------------------------------------------------------------
@@ -2590,16 +2607,18 @@ function hydratePosters() {
     el.dataset.hydrated = '1';
     el.insertAdjacentHTML('beforeend', '<div class="poster-spin"></div>');
     const bustedUrl = bustUrl(el.dataset.poster);
+    const isThumb = el.classList.contains('ev-thumb');
     const img = new Image();
     img.onload = () => {
       el.style.backgroundImage = `url('${bustedUrl}')`;
-      // 'contain': afişten hiçbir şey kırpılmaz; kutunun oranına (4:5) tam
-      // uymayan afişlerde (ör. kare) üst-alt (ya da yan) boşluk kalır, o
-      // boşluk kutunun kendi koyu zeminiyle (bezel) dolar — kırpma yok.
+      // 'contain': afişten hiçbir şey kırpılmaz (kırpma afişi saçmalaştırır) —
+      // kutunun oranına tam uymayan afişlerde boşta kalan yer, thumbnail'de
+      // ŞEFFAF (kartın kendi rengi görünsün), büyük afişlerde koyu zeminle
+      // (bezel) dolar.
       el.style.backgroundSize = 'contain';
+      el.style.backgroundColor = isThumb ? 'transparent' : '#000';
       el.style.backgroundRepeat = 'no-repeat';
       el.style.backgroundPosition = 'center';
-      el.style.backgroundColor = '#000';
       el.querySelectorAll('.poster-spin, .poster-label').forEach(n => n.remove());
     };
     img.onerror = () => el.querySelectorAll('.poster-spin').forEach(n => n.remove());
@@ -2739,6 +2758,14 @@ function renderUpcoming(list) {
     const ticketUrl = String(ev.ticket_url || '').trim();
     const buyable = !out && (ticketUrl || (ev.tiers && ev.tiers.length));
     const cardAttr = !buyable ? '' : ticketUrl ? `data-card-link="${esc(ticketUrl)}"` : `data-card-buy="${esc(ev.event_id)}"`;
+    const posterUrl = String(ev.poster_url || '').trim();
+    // Afiş yoksa da AYNI boyutta kutu basılır (beyaz AC mark ile) — hizalar
+    // her satırda aynı kalır, sadece tıklanabilir/büyüyebilir olma farkı var.
+    const thumb = `
+      <div class="ev-thumb ${posterUrl ? 'ev-thumb-zoom' : ''} relative shrink-0 border border-line"
+           style="${posterStyle(ev)}" ${posterUrl ? `data-poster="${esc(posterUrl)}" data-poster-zoom="${esc(posterUrl)}" title="View poster"` : ''}>
+        ${posterUrl ? '' : '<img src="assets/logo-mark-white.png" alt="" class="poster-label poster-mark" onerror="this.remove()">'}
+      </div>`;
     return `
     <article class="ev-card flex bg-panel border border-line ${out ? 'opacity-60' : ''} ${buyable ? 'cursor-pointer' : ''}" ${cardAttr}>
       <div class="perf shrink-0 w-24 sm:w-28 px-2 py-3 flex flex-col justify-center text-center font-mono">
@@ -2747,6 +2774,7 @@ function renderUpcoming(list) {
         <span class="text-lg uppercase tracking-[.08em] leading-tight">${p.mon}</span>
         <span class="text-lg uppercase tracking-[.08em] leading-tight text-dim">${p.time}</span>
       </div>
+      ${thumb}
       <div class="flex-1 p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center gap-3">
         <div class="flex-1 min-w-0">
           <h3 class="display text-2xl uppercase leading-tight">${esc(ev.title)}</h3>
@@ -3382,8 +3410,26 @@ function copyEventLink(id) {
   });
 }
 
+/* Liste thumbnail'ine tıklayınca afişi büyütür. Thumbnail zaten tıklanabilir
+   kartın İÇİNDE olduğu için bu, global tıklama yöneticisinde EN ÖNCE
+   kontrol edilir — yoksa hem lightbox açılır hem bilet paneli/dış link. */
+function openPosterLightbox(url) {
+  if (!url) return;
+  $('#poster-lightbox-img').src = bustUrl(url);
+  const lb = $('#poster-lightbox');
+  lb.classList.remove('hidden');
+  lb.classList.add('flex');
+}
+function closePosterLightbox() {
+  const lb = $('#poster-lightbox');
+  lb.classList.add('hidden');
+  lb.classList.remove('flex');
+}
+
 /* ================= boot ================= */
 document.addEventListener('click', e => {
+  const zoom = e.target.closest('[data-poster-zoom]');
+  if (zoom) { openPosterLightbox(zoom.dataset.posterZoom); return; }
   const b = e.target.closest('[data-buy]');
   if (b) { openBuy(b.dataset.buy); return; }
   // Kutunun geri kalanına tıklama: içeride zaten bir <a> varsa (dış bilet
@@ -3395,7 +3441,14 @@ document.addEventListener('click', e => {
   if (card) openBuy(card.dataset.cardBuy);
 });
 $('#buy-overlay').addEventListener('click', closeBuy);
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeBuy(); });
+// Görünürdeki büyük × butonu zaten kendi onclick'iyle kapatıyor; overlay'in
+// GERİ KALANINA (görsele dahil) tıklamak da kapatsın — basit "dışına tıkla" alışkanlığı.
+$('#poster-lightbox').addEventListener('click', closePosterLightbox);
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (!$('#poster-lightbox').classList.contains('hidden')) { closePosterLightbox(); return; }
+  closeBuy();
+});
 
 // 'loading' → API bekleniyor (satın alma paneli spinner gösterir),
 // 'live' → Sheet verisi geldi, 'fallback' → API yok/ulaşılamadı, gömülü veri.
