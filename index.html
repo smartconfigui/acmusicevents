@@ -2795,7 +2795,7 @@ function renderUpcoming(list) {
         ${posterUrl ? '' : '<img src="assets/logo-mark-white.png" alt="" class="poster-label poster-mark" onerror="this.remove()">'}
       </div>`;
     return `
-    <article class="ev-card flex bg-panel border border-line ${out ? 'opacity-60' : ''} ${buyable ? 'cursor-pointer' : ''}" ${cardAttr}>
+    <article class="ev-card flex items-center bg-panel border border-line ${out ? 'opacity-60' : ''} ${buyable ? 'cursor-pointer' : ''}" ${cardAttr}>
       <div class="perf shrink-0 w-24 sm:w-28 px-2 py-3 flex flex-col justify-center text-center font-mono">
         <span class="text-[10px] uppercase tracking-[.1em] text-glow">${p.dow}</span>
         <span class="display text-5xl leading-none my-1">${p.day}</span>
@@ -2807,7 +2807,7 @@ function renderUpcoming(list) {
         <div class="flex-1 min-w-0">
           <h3 class="display text-2xl uppercase leading-tight">${esc(ev.title)}</h3>
           <p class="text-dim text-sm mt-1">${esc(ev.venue)}</p>
-          ${descHtml(ev, 'text-dim text-xs mt-1 leading-relaxed')}
+          ${descHtml(ev, 'text-dim text-[11px] mt-1 leading-relaxed truncate')}
         </div>
         <div class="flex items-center gap-4 shrink-0">
           ${out
