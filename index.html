@@ -123,15 +123,7 @@
      aynı kalır); kutunun üstüne gelince buton da aydınlanır — sanki direkt
      butona gelinmiş gibi (hover:bg-neonsoft + hover:shadow-neon ile birebir). */
   .ev-card:hover .ev-cta { background-color:#93A2FF; box-shadow:0 0 24px rgba(91,108,255,.45),0 0 64px rgba(91,108,255,.18); }
-  /* Liste satırındaki küçük afiş thumbnail'i: tarih bloğuyla (.perf) AYNI
-     yükseklikte (kare) olmalı. Flex satırında aspect-ratio ile stretch
-     birbirine güvenilir şekilde bağlanmıyor (genişlik içerik olmadığı için
-     sıfıra çöküyor) — bu yüzden JS'te syncThumbSizes() .perf'in gerçek
-     piksel yüksekliğini ölçüp buraya birebir uyguluyor. Bu değer o an
-     hazır olmadan önceki ilk boyama için düşecek makul bir başlangıç. */
-  .ev-thumb { width:120px; height:120px; align-self:center; }
-  .ev-thumb.ev-thumb-zoom { cursor:zoom-in; }
-  .ev-thumb.ev-thumb-zoom:hover { opacity:.8; }
+  /* bilet panelindeki "See poster" linki afişi büyütüp gösterir */
   #poster-lightbox { cursor:zoom-out; }
   #poster-lightbox-img { max-width:100%; max-height:100%; }
   .lightbox-close { position:absolute; top:16px; right:16px; }
@@ -2611,16 +2603,14 @@ function hydratePosters() {
     el.dataset.hydrated = '1';
     el.insertAdjacentHTML('beforeend', '<div class="poster-spin"></div>');
     const bustedUrl = bustUrl(el.dataset.poster);
-    const isThumb = el.classList.contains('ev-thumb');
     const img = new Image();
     img.onload = () => {
       el.style.backgroundImage = `url('${bustedUrl}')`;
       // 'contain': afişten hiçbir şey kırpılmaz (kırpma afişi saçmalaştırır) —
-      // kutunun oranına tam uymayan afişlerde boşta kalan yer, thumbnail'de
-      // ŞEFFAF (kartın kendi rengi görünsün), büyük afişlerde koyu zeminle
+      // kutunun oranına tam uymayan afişlerde boşta kalan yer koyu zeminle
       // (bezel) dolar.
       el.style.backgroundSize = 'contain';
-      el.style.backgroundColor = isThumb ? 'transparent' : '#000';
+      el.style.backgroundColor = '#000';
       el.style.backgroundRepeat = 'no-repeat';
       el.style.backgroundPosition = 'center';
       el.querySelectorAll('.poster-spin, .poster-label').forEach(n => n.remove());
@@ -2646,32 +2636,10 @@ function render(events) {
   renderUpcoming(upcoming);
   renderPast(past);
   hydratePosters();
-  syncThumbSizes();
   $('#contact-email').href = 'mailto:' + CONFIG.CONTACT_EMAIL;
   $('#contact-email').textContent = CONFIG.CONTACT_EMAIL;
   $('#ig-link').href = CONFIG.INSTAGRAM;
 }
-
-/* Afiş thumbnail'i (.ev-thumb) tarih bloğuyla (.perf) aynı yükseklikte
-   (kare) görünsün diye .perf'in gerçek piksel yüksekliğini ölçüp birebir
-   uygular. Satır yüksekliği içerik/font/ekran genişliğine göre değiştiği
-   için render sonrası, font yüklenince ve pencere boyu değişince tekrar
-   çalışır (resize debounce'lı). */
-function syncThumbSizes() {
-  document.querySelectorAll('#upcoming article').forEach(a => {
-    const perf = a.querySelector('.perf');
-    const thumb = a.querySelector('.ev-thumb');
-    if (!perf || !thumb) return;
-    const h = Math.round(perf.getBoundingClientRect().height);
-    if (h > 0) { thumb.style.width = h + 'px'; thumb.style.height = h + 'px'; }
-  });
-}
-let thumbSyncTimer;
-window.addEventListener('resize', () => {
-  clearTimeout(thumbSyncTimer);
-  thumbSyncTimer = setTimeout(syncThumbSizes, 120);
-});
-if (document.fonts && document.fonts.ready) document.fonts.ready.then(syncThumbSizes).catch(() => {});
 
 /* API cevabı gelene kadar sayfanın silüeti: iskelet bloklar + shimmer. */
 function sk(w, h) { return `<div class="sk" style="width:${w};height:${h}"></div>`; }
@@ -2784,30 +2752,19 @@ function renderUpcoming(list) {
     const ticketUrl = String(ev.ticket_url || '').trim();
     const buyable = !out && (ticketUrl || (ev.tiers && ev.tiers.length));
     const cardAttr = !buyable ? '' : ticketUrl ? `data-card-link="${esc(ticketUrl)}"` : `data-card-buy="${esc(ev.event_id)}"`;
-    const posterUrl = String(ev.poster_url || '').trim();
-    // Afiş yoksa da AYNI boyutta kutu basılır (beyaz AC mark ile) — hizalar
-    // her satırda aynı kalır, sadece tıklanabilir/büyüyebilir olma farkı var.
-    // Afiş yoksa arka plan gradyan DEĞİL, şeffaf (kartın kendi rengi
-    // görünür) — gradyan sadece afiş yüklenene kadarki bekleme placeholder'ı.
-    const thumb = `
-      <div class="ev-thumb ${posterUrl ? 'ev-thumb-zoom' : ''} relative shrink-0 border border-line"
-           ${posterUrl ? `style="${posterStyle(ev)}" data-poster="${esc(posterUrl)}" data-poster-zoom="${esc(posterUrl)}" title="View poster"` : ''}>
-        ${posterUrl ? '' : '<img src="assets/logo-mark-white.png" alt="" class="poster-label poster-mark" onerror="this.remove()">'}
-      </div>`;
     return `
-    <article class="ev-card flex items-center bg-panel border border-line ${out ? 'opacity-60' : ''} ${buyable ? 'cursor-pointer' : ''}" ${cardAttr}>
+    <article class="ev-card flex bg-panel border border-line ${out ? 'opacity-60' : ''} ${buyable ? 'cursor-pointer' : ''}" ${cardAttr}>
       <div class="perf shrink-0 w-24 sm:w-28 px-2 py-3 flex flex-col justify-center text-center font-mono">
         <span class="text-[10px] uppercase tracking-[.1em] text-glow">${p.dow}</span>
         <span class="display text-5xl leading-none my-1">${p.day}</span>
         <span class="text-lg uppercase tracking-[.08em] leading-tight">${p.mon}</span>
         <span class="text-lg uppercase tracking-[.08em] leading-tight text-dim">${p.time}</span>
       </div>
-      ${thumb}
       <div class="flex-1 p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center gap-3">
         <div class="flex-1 min-w-0">
           <h3 class="display text-2xl uppercase leading-tight">${esc(ev.title)}</h3>
           <p class="text-dim text-sm mt-1">${esc(ev.venue)}</p>
-          ${descHtml(ev, 'text-dim text-[11px] mt-1 leading-relaxed truncate')}
+          ${descHtml(ev, 'text-dim text-xs mt-1 leading-relaxed')}
         </div>
         <div class="flex items-center gap-4 shrink-0">
           ${out
@@ -2891,6 +2848,7 @@ function renderBuyForm() {
   const ev = currentEvent;
   const p = fmtParts(parseDT(ev.date_time));
   const t0 = tiersOf(ev)[selectedTierIdx] || {};
+  const posterUrl = String(ev.poster_url || '').trim();
   gaEvent('view_item', { currency: 'USD', value: t0.price || 0,
     items: [{ item_id: ev.event_id, item_name: ev.title, item_variant: t0.name || '', price: t0.price || 0 }] });
   $('#buy-content').innerHTML = `
@@ -2900,8 +2858,12 @@ function renderBuyForm() {
         <h3 id="buy-title" class="display text-3xl uppercase leading-tight mt-1">${esc(ev.title)}</h3>
         <p class="text-dim text-sm mt-1">${p.dow} · ${p.mon} ${p.day} · ${p.time} — ${esc(ev.venue)}</p>
         ${descHtml(ev, 'text-dim text-sm mt-2 leading-relaxed')}
-        <button type="button" onclick="copyEventLink('${esc(ev.event_id)}')" id="share-link"
-                class="font-mono text-[10px] uppercase tracking-[.2em] text-dim hover:text-neonsoft underline underline-offset-2 mt-2">Copy link to this show</button>
+        <div class="flex items-center gap-3 flex-wrap mt-2">
+          <button type="button" onclick="copyEventLink('${esc(ev.event_id)}')" id="share-link"
+                  class="font-mono text-[10px] uppercase tracking-[.2em] text-dim hover:text-neonsoft underline underline-offset-2">Copy link to this show</button>
+          ${posterUrl ? `<button type="button" data-poster-zoom="${esc(posterUrl)}"
+                  class="font-mono text-[10px] uppercase tracking-[.2em] text-dim hover:text-neonsoft underline underline-offset-2">See poster</button>` : ''}
+        </div>
       </div>
       <button onclick="closeBuy()" aria-label="Close" class="text-dim hover:text-paper text-2xl leading-none px-2">×</button>
     </div>
@@ -3438,9 +3400,7 @@ function copyEventLink(id) {
   });
 }
 
-/* Liste thumbnail'ine tıklayınca afişi büyütür. Thumbnail zaten tıklanabilir
-   kartın İÇİNDE olduğu için bu, global tıklama yöneticisinde EN ÖNCE
-   kontrol edilir — yoksa hem lightbox açılır hem bilet paneli/dış link. */
+/* Bilet panelindeki "See poster" linkine tıklayınca afişi büyütür. */
 function openPosterLightbox(url) {
   if (!url) return;
   $('#poster-lightbox-img').src = bustUrl(url);
