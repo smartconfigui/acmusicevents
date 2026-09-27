@@ -3180,7 +3180,7 @@ function renderInlineCardStep(o) {
         <span class="font-mono text-xs uppercase tracking-[.2em] text-dim">Total · <span id="ord-code">${o.ref_code ? esc(o.ref_code) : '…'}</span></span>
         <span class="display text-3xl">$${o.amount_due}</span>
       </div>
-      <div id="card-el" class="mt-4" style="min-height:48px"></div>
+      <div id="card-el" class="mt-4 flex justify-center" style="min-height:48px"><div class="spinner" style="margin:8px auto"></div></div>
     </div>
     <button id="pay-btn" disabled
       class="block w-full text-center bg-neon text-night display text-xl uppercase py-3.5 mt-5 shadow-neon hover:bg-neonsoft disabled:opacity-50">Pay $${o.amount_due}</button>
@@ -3200,6 +3200,7 @@ async function initInlineCard(o) {
     if (!sqPayments) sqPayments = window.Square.payments(SQ.app, SQ.loc);
     const card = await sqCard();
     await card.attach('#card-el');
+    const spin = $('.spinner', $('#card-el')); if (spin) spin.remove();
     inlineCardAttached = true;
     inlineMaybeEnable();
     btn.onclick = async () => {
@@ -3221,6 +3222,7 @@ async function initInlineCard(o) {
     };
   } catch (e) {
     // SDK yüklenemedi: hazır Square sayfası linkine düş
+    const el = $('#card-el'); if (el) el.innerHTML = '';
     const hosted = o.pay_card_url || curTier().square;
     msg.innerHTML = hosted
       ? `Card form couldn't load. <a href="${esc(hosted)}" target="_blank" rel="noopener" class="underline underline-offset-2 text-neonsoft">Use the secure checkout page ↗</a>`
@@ -3515,25 +3517,19 @@ async function loadEvents() {
     render(EVENTS);
     hideSplash();
   }
-  // 2) Canlı adetler (statik yoksa eski yol: tam liste API'den, o da yoksa demo).
-  if (staticOk) {
-    if (CONFIG.API_URL) {
-      $('#sync').textContent = '· syncing availability…';
-      await fetchAvail();
-      $('#sync').textContent = '';
-      render(EVENTS);
-      updateBuyLimits(); // panel bu arada açıldıysa taze limitleri yansıt
-    }
-  } else {
+  if (!staticOk) {
     renderLoading();
     if (!CONFIG.API_URL || !(await fetchFullEvents())) { EVENTS = DEMO_EVENTS; dataState = 'fallback'; }
     render(EVENTS);
     hideSplash();
   }
   // Doğrudan acmusicevents.com/event-id linkiyle gelindiyse (bkz. <head>'teki
-  // ?e= çözücü) o etkinliğin bilet panelini otomatik aç — ama yalnızca
-  // gerçekten satın alınabilirse (iç satış, tükenmemiş); değilse sayfa
-  // normal ana sayfa gibi açılır, hiçbir hata göstermez.
+  // ?e= çözücü) o etkinliğin bilet panelini HEMEN aç — ama yalnızca gerçekten
+  // satın alınabilirse (iç satış, tükenmemiş); değilse sayfa normal ana sayfa
+  // gibi açılır, hiçbir hata göstermez. Statik katalogdaki tier/fiyat/kalan
+  // veriler zaten yeterli — bunu aşağıdaki canlı avail senkronunun bitmesine
+  // bırakmak sekmenin 4-5 sn geç açılmasına yol açıyordu; canlı adetler panel
+  // açıldıktan SONRA arka planda gelip updateBuyLimits() ile tazelenir.
   if (window.__EVENT_FROM_URL) {
     const id = window.__EVENT_FROM_URL;
     window.__EVENT_FROM_URL = null;
@@ -3543,6 +3539,14 @@ async function loadEvents() {
     }
   }
   if (pendingBuyId) { const id = pendingBuyId; pendingBuyId = null; openBuy(id); }
+  // Canlı adetler (yalnızca statik yoldaysak; fallback zaten tam/güncel veri getirdi).
+  if (staticOk && CONFIG.API_URL) {
+    $('#sync').textContent = '· syncing availability…';
+    await fetchAvail();
+    $('#sync').textContent = '';
+    render(EVENTS);
+    updateBuyLimits(); // panel bu arada açıldıysa taze limitleri yansıt
+  }
 }
 
 // Sekme arka plandan öne gelince adetleri tazele (son çekimden 60 sn geçtiyse):
