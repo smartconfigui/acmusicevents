@@ -56,6 +56,11 @@
   #result.ok   { box-shadow:inset 0 0 0 8px var(--ok); }   #result.ok h2   { color:var(--ok); }
   #result.warn { box-shadow:inset 0 0 0 8px var(--warn); } #result.warn h2 { color:var(--warn); }
   #result.err  { box-shadow:inset 0 0 0 8px var(--err); }  #result.err h2  { color:var(--err); }
+  /* taramadan hemen sonra, sunucu cevabı gelene kadar (cache'teki isimle) anlık gösterim */
+  .spinner { width:52px; height:52px; border:4px solid var(--line); border-top-color:var(--neon);
+             border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .btn.small:disabled { opacity:.6; cursor:default; }
   /* tabs */
   nav { position:fixed; bottom:0; left:0; right:0; display:flex; border-top:1px solid var(--line);
         background:var(--panel); }
@@ -255,24 +260,43 @@ function parseTicket(text) {
 }
 
 /* ---------- check-in ---------- */
+/* Apps Script'e giden gerçek "mark" isteği genelde 1-3 sn sürüyor. Kapıda
+   bu süre boş ekran gibi hissettiriyordu — bilet zaten cache'teki listede
+   varsa (cachedList) ismi ANINDA gösteriyoruz ("checking in…" + spinner),
+   asıl sonucu (yeşil/sarı/kırmızı) yine sunucudan gelen cevaba göre basıyoruz.
+   Yani ekrana hiç yanlış "başarılı" basmıyoruz, sadece bekleme boşluğunu dolduruyoruz. */
+function showChecking(o) {
+  const el = $('#result');
+  el.className = '';
+  el.innerHTML = `<div class="spinner"></div><h2 style="margin-top:18px">${esc(o.name)}</h2>` +
+    `<p class="sub">${o.qty} × ${esc(o.tier_name)} — checking in…</p>`;
+  el.classList.remove('hidden');
+  clearTimeout(resultTimer);
+}
+
 function handleTicket(c) {
   const i = c.lastIndexOf('.');
   if (navigator.vibrate) navigator.vibrate(60);
+  const code = c.slice(0, i).trim().toUpperCase();
+  const cached = cachedList.find(o => o.code.toUpperCase() === code);
+  if (cached) showChecking(cached);
   api({ action: 'mark', key: doorKey, code: c.slice(0, i), sig: c.slice(i + 1) })
     .then(showMarkResult)
     .catch(() => showResult('err', '📶', 'Network error', 'Try again'));
 }
 
-function markByOrder(id) {
+function markByOrder(id, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
   api({ action: 'mark', key: doorKey, order: id })
     .then(showMarkResult)
-    .catch(() => showResult('err', '📶', 'Network error', 'Try again'));
+    .catch(() => { showResult('err', '📶', 'Network error', 'Try again'); renderList(); });
 }
 
 function showMarkResult(d) {
   if (!d.ok) {
     if (d.error === 'denied') { clearKey(); stopCamera(); showKeyView(); return; }
     showResult('err', '⛔', 'Invalid ticket', d.error || '');
+    renderList(); // Listeden tıklandıysa disabled/"…" kalan butonu sıfırlar
     return;
   }
   if (d.result === 'checked_in') {
@@ -282,11 +306,12 @@ function showMarkResult(d) {
       all ? null : d);
     syncListEntry(d);
   }
-  else if (d.result === 'already') showResult('warn', '⚠️', 'All tickets used', `${d.name} · ${d.qty}/${d.qty} in · ${String(d.checked_in_at).slice(11, 16)}`);
-  else showResult('warn', '⏳', 'Not confirmed', `${d.name} — payment pending`);
+  else if (d.result === 'already') { showResult('warn', '⚠️', 'All tickets used', `${d.name} · ${d.qty}/${d.qty} in · ${String(d.checked_in_at).slice(11, 16)}`); renderList(); }
+  else { showResult('warn', '⏳', 'Not confirmed', `${d.name} — payment pending`); renderList(); }
 }
 
-function admitMore(id) {
+function admitMore(id, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
   api({ action: 'mark', key: doorKey, order: id })
     .then(showMarkResult)
     .catch(() => showResult('err', '📶', 'Network error', 'Try again'));
@@ -298,7 +323,7 @@ function showResult(kind, icon, title, sub, moreOrder) {
   el.className = kind;
   el.innerHTML = `<div class="icon">${icon}</div><h2>${esc(title)}</h2><p class="sub">${esc(sub)}</p>` +
     (moreOrder ? `<button class="btn small" style="margin-top:22px"
-        onclick="event.stopPropagation(); admitMore('${esc(String(moreOrder.order_id))}')">+1 admit (${moreOrder.in_count}/${moreOrder.qty} in)</button>` : '') +
+        onclick="event.stopPropagation(); admitMore('${esc(String(moreOrder.order_id))}', this)">+1 admit (${moreOrder.in_count}/${moreOrder.qty} in)</button>` : '') +
     '<p class="sub" style="margin-top:20px">tap to continue</p>';
   el.classList.remove('hidden');
   clearTimeout(resultTimer);
@@ -338,7 +363,7 @@ function renderList() {
           ? `<span class="in">✔ all in ${String(o.checked_in_at).slice(11, 16)}</span>`
           : `<div style="display:flex;align-items:center;gap:10px">
                ${inc > 0 ? `<span class="in">${inc}/${o.qty} in</span>` : ''}
-               <button class="btn small" onclick="markByOrder('${esc(String(o.order_id))}')">+1 in</button>
+               <button class="btn small" onclick="markByOrder('${esc(String(o.order_id))}', this)">+1 in</button>
              </div>`}
       </div>`; }).join('');
   }).join('') || '<p class="msg" style="padding:12px 0">No matching guests.</p>';

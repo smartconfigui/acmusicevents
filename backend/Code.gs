@@ -170,7 +170,19 @@ function doGet(e) {
     // JSON uçları — checkin sayfası (acmusicevents.com/checkin/) bunları kullanır
     if (a === 'verify')  return json_(verify_(p.code, p.sig));
     if (a === 'mark')    return json_(mark_(p.key, p.code, p.sig, p.order));
-    if (a === 'list')    return json_(listOrders_(p.key));
+    if (a === 'list') {
+      // 15 sn'lik cevap önbelleği: kapıda birden fazla telefon aynı anda
+      // "Refresh list" ya da giriş yaptığında tam Orders okumasını tekrarlamaz.
+      // Bir check-in olduğunda mark_() bu önbelleği hemen düşürür, o yüzden
+      // "bayat liste" riski yok — sadece art arda tekrar okumalar hızlanır.
+      var lc = CacheService.getScriptCache();
+      var lhit = lc.get('list_v1');
+      if (lhit) return ContentService.createTextOutput(lhit).setMimeType(ContentService.MimeType.JSON);
+      var lres = listOrders_(p.key);
+      var lpayload = JSON.stringify(lres);
+      if (lres.ok) lc.put('list_v1', lpayload, 15);
+      return ContentService.createTextOutput(lpayload).setMimeType(ContentService.MimeType.JSON);
+    }
     // Eski HTML görünümleri (yedek)
     if (a === 'scan')    return scanPage_(p.code, p.sig);
     if (a === 'door')    return doorPage_(p.key, p.q);
@@ -749,6 +761,9 @@ function mark_(key, code, sig, orderId) {
   info.checked_in_at = now;
   info.status = newCount >= info.qty ? 'checked_in' : 'confirmed';
   info.result = 'checked_in';
+  // Az önce eklenen check-in'i başka bir kapı telefonu hemen görsün diye
+  // liste önbelleğini düşür (bkz. doGet 'list' — 15 sn'lik cache).
+  try { CacheService.getScriptCache().remove('list_v1'); } catch (err) {}
   return info;
 }
 
