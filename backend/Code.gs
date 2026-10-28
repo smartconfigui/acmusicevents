@@ -29,8 +29,9 @@ var EVENTS_HEADERS = ['event_id', 'title', 'date_time', 'venue', 'capacity', 'st
 var TIERS_HEADERS  = ['event_id', 'tier_id', 'tier_name', 'price', 'cap', 'sold_elsewhere', 'square_link'];
 var ORDERS_HEADERS = ['order_id', 'created_at', 'event_id', 'tier_id', 'tier_name', 'name', 'email',
                       'qty', 'amount_due', 'ref_code', 'status', 'confirmed_at', 'checked_in_at', 'notes',
-                      'checked_in_count', 'ga_client_id'];
+                      'checked_in_count', 'ga_client_id', 'payment_type'];
 var ORDER_STATUSES = ['pending', 'confirmed', 'checked_in', 'expired', 'cancelled'];
+var PAYMENT_TYPES = ['venmo', 'card', 'apple_pay', 'google_pay', 'manual', ''];
 
 /* ============================== KURULUM ============================== */
 
@@ -62,6 +63,17 @@ function setup() {
     orders.getRange(1, 16).setValue('ga_client_id').setFontWeight('bold');
   }
 
+  // Ödeme türü kolonu (mevcut sayfalara sonradan eklenir): sipariş oluşurken
+  // seçilen yöntemle (venmo/card/apple_pay/google_pay) doldurulur, ödeme
+  // gerçekten onaylandığında (bkz. payWithCard_, scanVenmo) kesinleşen
+  // yöntemle güncellenir. Elle onaylarda (Venmo'yu görüp K'yı confirmed
+  // yapınca) olduğu gibi kalır — gerekirse elle düzeltilebilir.
+  if (String(orders.getRange(1, 17).getValue()) !== 'payment_type') {
+    orders.getRange(1, 17).setValue('payment_type').setFontWeight('bold');
+  }
+  var payRule = SpreadsheetApp.newDataValidation().requireValueInList(PAYMENT_TYPES, true).build();
+  orders.getRange(2, 17, orders.getMaxRows() - 1, 1).setDataValidation(payRule);
+
   // description kolonu (opsiyonel, mevcut sayfalara sonradan eklenir)
   if (String(events.getRange(1, 9).getValue()) !== 'description') {
     events.getRange(1, 9).setValue('description').setFontWeight('bold');
@@ -71,11 +83,11 @@ function setup() {
   // (tüm otomasyon oraya yazar), bu sekmeler yalnızca QUERY ile filtreler —
   // veri kopyalanmaz/taşınmaz, elle düzenlenemez, her zaman güncel.
   ensureQuerySheet_(ss, 'Pending',
-    "=QUERY(Orders!A:O, \"select * where K='pending' order by B asc\", 1)");
+    "=QUERY(Orders!A:Q, \"select * where K='pending' order by B asc\", 1)");
   ensureQuerySheet_(ss, 'Confirmed',
-    "=QUERY(Orders!A:O, \"select * where K='confirmed' order by B desc\", 1)");
+    "=QUERY(Orders!A:Q, \"select * where K='confirmed' order by B desc\", 1)");
   ensureQuerySheet_(ss, 'Archive',
-    "=QUERY(Orders!A:O, \"select * where K='cancelled' or K='expired' order by B desc\", 1)");
+    "=QUERY(Orders!A:Q, \"select * where K='cancelled' or K='expired' order by B desc\", 1)");
 
   // Orders'ta statüye göre satır rengi (ilk kurulumda bir kez uygulanır;
   // sonradan elle değiştirirsen tekrar setup() çalıştırmak üzerine yazmaz).
@@ -383,10 +395,12 @@ function createOrder_(b) {
     var ref = prefix + '-' + (100 + n);
     var amount = (qty * Number(tier[3])).toFixed(2);
     var now = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
+    var method = String(b.method || '').trim().toLowerCase();
+    if (PAYMENT_TYPES.indexOf(method) === -1) method = '';
 
     orders.appendRow([n, now, String(b.event_id), String(tier[1]), String(tier[2]),
                       name, email, qty, amount, ref, 'pending', '', '', '', '',
-                      String(b.ga_client_id || '').slice(0, 40)]);
+                      String(b.ga_client_id || '').slice(0, 40), method]);
     bustCache_(); // kontenjan değişti, önbellekleri tazele
     // Gömülü kart formu kuruluysa (APP_ID var) hosted yedek linki üretme — her siparişten ~1 sn kazandırır.
     var cardUrl = sqPublic_().app ? '' :
@@ -435,8 +449,11 @@ function payWithCard_(b) {
   if (data.payment && (data.payment.status === 'COMPLETED' || data.payment.status === 'APPROVED')) {
     var sh = SpreadsheetApp.getActive().getSheetByName('Orders');
     var now = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
+    var payMethod = String(b.pay_method || '').trim().toLowerCase();
+    if (['card', 'apple_pay', 'google_pay'].indexOf(payMethod) === -1) payMethod = 'card';
     sh.getRange(found.sheetRow, 11).setValue('confirmed');
     sh.getRange(found.sheetRow, 12).setValue(now);
+    sh.getRange(found.sheetRow, 17).setValue(payMethod); // gerçekten tahsil edilen yöntem (başlangıçtaki tahmini ezer)
     var rowData = sh.getRange(found.sheetRow, 1, 1, ORDERS_HEADERS.length).getValues()[0];
     try { sendTicket_(rowData); } catch (e) { Logger.log('bilet maili gönderilemedi: ' + e); }
     bustCache_();
@@ -669,6 +686,7 @@ function scanVenmo() {
         sh.getRange(found.sheetRow, 11).setValue('confirmed');
         sh.getRange(found.sheetRow, 12).setValue(now);
         sh.getRange(found.sheetRow, 14).setValue('venmo-otomatik');
+        sh.getRange(found.sheetRow, 17).setValue('venmo');
         var rowData = sh.getRange(found.sheetRow, 1, 1, ORDERS_HEADERS.length).getValues()[0];
         try { sendTicket_(rowData); } catch (e) { Logger.log('bilet maili gönderilemedi: ' + e); }
         handled = true;

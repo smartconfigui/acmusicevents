@@ -2964,6 +2964,7 @@ async function submitOrder(e) {
   e.preventDefault();
   const f = e.target;
   if (f.website.value) return; // honeypot
+  const method = (e.submitter && e.submitter.value) || 'venmo';
   const order = {
     event_id: currentEvent.event_id,
     name: f.name.value.trim(),
@@ -2972,8 +2973,8 @@ async function submitOrder(e) {
     tier: curTier().id,
     tier_name: curTier().name,
     ga_client_id: GA_CID,
+    method,
   };
-  const method = (e.submitter && e.submitter.value) || 'venmo';
   f.querySelectorAll('[type=submit]').forEach(b => { b.disabled = true; });
   gaEvent('begin_checkout', { currency: 'USD', value: qty * curTier().price, payment_type: method,
     items: [{ item_id: currentEvent.event_id, item_name: currentEvent.title, item_variant: curTier().name, price: curTier().price, quantity: qty }] });
@@ -3211,7 +3212,7 @@ async function initInlineCard(o) {
       try {
         const t = await card.tokenize();
         if (t.status !== 'OK') throw new Error((t.errors && t.errors[0] && t.errors[0].message) || 'Card was not accepted');
-        const r = await fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify({ action: 'pay', ref_code: ord.ref_code, token: t.token }) });
+        const r = await fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify({ action: 'pay', ref_code: ord.ref_code, token: t.token, pay_method: 'card' }) });
         const d = await r.json();
         if (!d.ok) throw new Error(d.error || 'Payment failed');
         renderPaidStep(ord);
@@ -3288,6 +3289,7 @@ async function expressPay(kind) {
   if (!w || !f) return;
   if (f.website.value) return; // honeypot
   if (!f.reportValidity()) return; // isim + mail zorunlu (kapı listesi + bilet maili)
+  const payMethod = kind === 'ap' ? 'apple_pay' : 'google_pay';
   const order = {
     event_id: currentEvent.event_id,
     name: f.name.value.trim(),
@@ -3296,8 +3298,9 @@ async function expressPay(kind) {
     tier: curTier().id,
     tier_name: curTier().name,
     ga_client_id: GA_CID,
+    method: payMethod,
   };
-  gaEvent('begin_checkout', { currency: 'USD', value: qty * curTier().price, payment_type: kind === 'ap' ? 'apple_pay' : 'google_pay',
+  gaEvent('begin_checkout', { currency: 'USD', value: qty * curTier().price, payment_type: payMethod,
     items: [{ item_id: currentEvent.event_id, item_name: currentEvent.title, item_variant: curTier().name, price: curTier().price, quantity: qty }] });
   // Sipariş kaydını hemen başlat ama BEKLEME: cüzdan sayfası kullanıcı
   // hareketi içinde anında açılmalı. (Ödeme action=pay'de çekilir; sipariş
@@ -3323,7 +3326,7 @@ async function expressPay(kind) {
     return;
   }
   try {
-    const r = await fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify({ action: 'pay', ref_code: ord.ref_code, token: t.token }) });
+    const r = await fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify({ action: 'pay', ref_code: ord.ref_code, token: t.token, pay_method: payMethod }) });
     const d = await r.json();
     if (!d.ok) throw new Error(d.error || 'Payment failed');
     renderPaidStep(ord);

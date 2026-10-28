@@ -97,6 +97,18 @@ Orders sayfasına `pending` olarak düşürür.
   bu sekmeler sadece bakması kolay olsun diye filtrelenmiş kopyalardır, elle
   düzenlenmez. Ayrıca Orders'ta satırlar statüye göre otomatik renklenir
   (sarı=pending, yeşil=confirmed, mavi=checked_in, gri=cancelled/expired).
+- **Ödeme türü (`payment_type`):** Orders'ta otomatik dolan bir kolon —
+  `venmo` / `card` / `apple_pay` / `google_pay`. Sipariş oluşurken alıcının
+  seçtiği yöntemle yazılır; ödeme gerçekten onaylandığında (gömülü kart/cüzdan
+  ödemesi ya da Venmo otomasyonu) kesinleşen yöntemle üzerine yazılır. Elle
+  onayladığın (Venmo'yu görüp K hücresini `confirmed` yaptığın) siparişlerde
+  olduğu gibi kalır — yanlışsa hücreye tıklayıp açılır menüden düzeltebilirsin
+  (`manual` seçeneği de var, belirsiz durumlar için). **Not:** bu kolon
+  mevcut bir Sheet'e `setup()`'ı tekrar çalıştırınca otomatik eklenir, ama
+  Pending/Confirmed/Archive sekmeleri daha önce oluşturulduysa QUERY aralığı
+  eski kalır (`A:O`) — yeni kolonu de görmek için o 3 sekmede A1 hücresini
+  silip `setup()`'ı bir kez daha çalıştır (boş A1'i görünce yeni `A:Q`
+  aralığıyla yeniden yazar).
 - **Statik event listesi (hızlı açılış, opsiyonel ama önerilir):** Site, event
   listesini kendi domain'indeki `events.js`'ten okur (ilk kare basılmadan hazır, flicker yok); canlı
   bilet adetleri hafif `?action=avail` ucundan gelir. Sheet'te Events/Tiers
