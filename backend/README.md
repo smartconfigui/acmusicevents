@@ -40,6 +40,11 @@ Orders sayfasına `pending` olarak düşürür.
   yazarsan ana sayfada (öne çıkan/yaklaşan gösteriler) ve bilet panelinde
   başlığın altında görünür. Boş bırakılırsa hiçbir şey gösterilmez.
 - **Dışarıdan satış:** Tiers'ta `sold_elsewhere` sayısını artır — kontenjan düşer.
+- **Sold kolonu (Tiers):** o kademeden sitede kaç bilet satıldığını canlı
+  gösterir (pending+confirmed+checked_in sipariş adetleri toplamı —
+  `sold_elsewhere` hariç, o ayrı kalır). Tek bir ArrayFormula; yeni kademe
+  satırı ekleyince elle bir şey yapmana gerek yok, otomatik aşağı yayılır.
+  `setup()`'ı tekrar çalıştırınca mevcut Tiers sayfalarına da eklenir.
 - **Kartla ödeme (Square, otomatik tam tutar):** bir kez kurulum —
   [developer.squareup.com](https://developer.squareup.com) → uygulama oluştur →
   **Production** sekmesinden Access Token'ı al; Location ID'yi Square Dashboard →

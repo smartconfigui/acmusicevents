@@ -79,6 +79,21 @@ function setup() {
     events.getRange(1, 9).setValue('description').setFontWeight('bold');
   }
 
+  // Tiers'a canlı "sold" kolonu (mevcut sayfalara sonradan eklenir): bu
+  // kademeden sitede kaç bilet satıldığı (pending+confirmed+checked_in
+  // sipariş adetleri toplamı — "left" hesabındaki aynı tanım). sold_elsewhere
+  // (dışarıdan satılanlar) BUNA dahil değil, ayrı kalır. Tek bir ArrayFormula:
+  // yeni bir kademe satırı eklendiğinde elle bir şey yapmana gerek yok,
+  // otomatik aşağı yayılır.
+  if (String(tiers.getRange(1, 8).getValue()) !== 'sold') {
+    tiers.getRange(1, 8).setValue('sold').setFontWeight('bold');
+    tiers.getRange(2, 8).setFormula(
+      '=ARRAYFORMULA(IF(A2:A="","",' +
+      'SUMIFS(Orders!H:H,Orders!C:C,A2:A,Orders!D:D,B2:B,Orders!K:K,"pending")+' +
+      'SUMIFS(Orders!H:H,Orders!C:C,A2:A,Orders!D:D,B2:B,Orders!K:K,"confirmed")+' +
+      'SUMIFS(Orders!H:H,Orders!C:C,A2:A,Orders!D:D,B2:B,Orders!K:K,"checked_in")))');
+  }
+
   // Statüye göre salt-okunur canlı görünümler: Orders TEK kaynak kalır
   // (tüm otomasyon oraya yazar), bu sekmeler yalnızca QUERY ile filtreler —
   // veri kopyalanmaz/taşınmaz, elle düzenlenemez, her zaman güncel.
