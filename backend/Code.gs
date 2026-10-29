@@ -19,7 +19,8 @@
  */
 
 var TZ = 'America/Los_Angeles';
-var PENDING_TTL_HOURS = 24;
+var PENDING_TTL_HOURS = 24;      // bu süreden eski pending'ler toplu "expired" yapılır (bkz. expirePending)
+var PENDING_HOLD_MINUTES = 20;   // pending bir sipariş kontenjanı en fazla bu kadar dakika tutar (bkz. tierLeftMap_)
 var CHECKIN_URL = 'https://acmusicevents.com/checkin/'; // bilet QR'ının açtığı sayfa
 var DOOR_PASS = '1453'; // kapı/check-in sayfası şifresi (statik)
 var OVERSELL_MAX = 3;   // tek sipariş, kademe kalanının en fazla bu kadar üzerine çıkabilir
@@ -275,16 +276,27 @@ function dateStr_(v) {
   return String(v);
 }
 
-/** Kademe başına kalan = cap - sold_elsewhere - (pending+confirmed+checked_in sipariş adetleri).
+/** Kademe başına kalan = cap - sold_elsewhere - (confirmed+checked_in +
+ *  PENDING_HOLD_MINUTES'ten yeni pending sipariş adetleri). Bir pending
+ *  sipariş kontenjanı sonsuza kadar değil, sadece bu kısa pencere boyunca
+ *  tutar — daha eskisi (henüz toplu "expired" yapılmamış olsa da) artık
+ *  kontenjanı tutmaz, tekrar satışa açılır. Sheet'teki satır/statü ise
+ *  olduğu gibi kalır, bunu değiştirmiyor — asıl toplu temizlik hâlâ
+ *  PENDING_TTL_HOURS (24 saat) ile expirePending()'de oluyor.
  *  cap boş = limitsiz (left: null). */
 function tierLeftMap_() {
   var used = {}; // "event|tier" -> adet
+  var pendingCutoff = Date.now() - PENDING_HOLD_MINUTES * 60 * 1000;
   rows_('Orders').forEach(function (r) {
     var st = String(r[10]);
-    if (st === 'pending' || st === 'confirmed' || st === 'checked_in') {
-      var k = r[2] + '|' + r[3];
-      used[k] = (used[k] || 0) + Number(r[7] || 0);
+    var counts = st === 'confirmed' || st === 'checked_in';
+    if (!counts && st === 'pending') {
+      var t = parseCreatedAt_(r[1]);
+      counts = t !== null && t >= pendingCutoff;
     }
+    if (!counts) return;
+    var k = r[2] + '|' + r[3];
+    used[k] = (used[k] || 0) + Number(r[7] || 0);
   });
   var map = {};
   rows_('Tiers').forEach(function (r) {

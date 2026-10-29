@@ -41,12 +41,14 @@ Orders sayfasına `pending` olarak düşürür.
   başlığın altında görünür. Boş bırakılırsa hiçbir şey gösterilmez.
 - **Dışarıdan satış:** Tiers'ta `sold_elsewhere` sayısını artır — kontenjan düşer.
 - **Sold kolonu (Tiers):** `cap` ile `sold_elsewhere` arasında durur, o
-  kademeden sitede kaç bilet satıldığını canlı gösterir (pending+confirmed+
-  checked_in sipariş adetleri toplamı — `sold_elsewhere` hariç, o ayrı
-  kalır). Tek bir ArrayFormula; yeni kademe satırı ekleyince elle bir şey
-  yapmana gerek yok, otomatik aşağı yayılır. `setup()`'ı tekrar
-  çalıştırınca mevcut Tiers sayfalarına da eklenir (sold_elsewhere'i bir
-  sütun sağa kaydırıp açılan yere yazar — mevcut veriler kaybolmaz).
+  kademeden GERÇEKTEN satılan bilet sayısını canlı gösterir (confirmed+
+  checked_in sipariş adetleri toplamı — pending, yani henüz ödenmemiş/terk
+  edilmiş denemeler, BİLEREK dahil değil; `sold_elsewhere` de ayrı kalır).
+  Her satırın kendi bağımsız formülü var; yeni bir kademe satırı
+  eklediğinde o satırın hücresine üsttekinden sürükleyip kopyala, ya da
+  `setup()`'ı tekrar çalıştır (tüm sütunu yeniden yazar). `setup()`'ı
+  mevcut bir Tiers sayfasında ilk çalıştırışında `sold_elsewhere`'i bir
+  sütun sağa kaydırıp açılan yere yazar — mevcut veriler kaybolmaz.
 - **Kartla ödeme (Square, otomatik tam tutar):** bir kez kurulum —
   [developer.squareup.com](https://developer.squareup.com) → uygulama oluştur →
   **Production** sekmesinden Access Token'ı al; Location ID'yi Square Dashboard →
@@ -86,8 +88,13 @@ Orders sayfasına `pending` olarak düşürür.
   etiketi alır; kodu okunamayan/eşleşmeyenler `acmusic-manuel-bak` etiketine
   düşer — arada bir o etikete bak, elle onayla. Tutar farklıysa otomatik
   onaylanmaz, fark Orders'ın notes kolonuna yazılır.
-- **Süre aşımı:** 24 saatten eski `pending` siparişler otomatik `expired` olur,
-  kontenjan geri açılır.
+- **Süre aşımı (iki aşamalı):** Bir `pending` sipariş kontenjanı en fazla
+  **20 dakika** tutar (`PENDING_HOLD_MINUTES`) — daha eskisi, Sheet'te hâlâ
+  `pending` görünse de, kalan hesabında artık sayılmaz, tekrar satışa açılır
+  (bu "kaç kaldı" rakamını anında etkiler, Sheet'e dokunmaz). Satırın
+  kendisi ise **24 saat** sonra (`PENDING_TTL_HOURS`) toplu olarak
+  `expired` yapılır (saatlik tetikleyici) — bu gecikme bilerek: terk
+  edilmiş denemelerin isim/e-postası bir gün Orders'ta görünür kalsın diye.
 - **Google Analytics (GA4, opsiyonel — her etkinlik ayrı takip edilir):** Site
   zaten `G-PQSVBDHQ06`'ya sayfa görüntülemesi + `view_item`/`begin_checkout`/
   `add_payment_info` gönderiyor (item_id = event_id, GA4'te Monetization
