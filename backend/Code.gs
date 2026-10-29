@@ -26,7 +26,7 @@ var OVERSELL_MAX = 3;   // tek sipariş, kademe kalanının en fazla bu kadar ü
 var GA_MEASUREMENT_ID = 'G-PQSVBDHQ06'; // gizli değil, GA4'ün ölçüm kimliği
 
 var EVENTS_HEADERS = ['event_id', 'title', 'date_time', 'venue', 'capacity', 'status', 'poster_url', 'ticket_url', 'description'];
-var TIERS_HEADERS  = ['event_id', 'tier_id', 'tier_name', 'price', 'cap', 'sold_elsewhere', 'square_link'];
+var TIERS_HEADERS  = ['event_id', 'tier_id', 'tier_name', 'price', 'cap', 'sold', 'sold_elsewhere', 'square_link'];
 var ORDERS_HEADERS = ['order_id', 'created_at', 'event_id', 'tier_id', 'tier_name', 'name', 'email',
                       'qty', 'amount_due', 'ref_code', 'status', 'confirmed_at', 'checked_in_at', 'notes',
                       'checked_in_count', 'ga_client_id', 'payment_type'];
@@ -79,21 +79,6 @@ function setup() {
     events.getRange(1, 9).setValue('description').setFontWeight('bold');
   }
 
-  // Tiers'a canlı "sold" kolonu (mevcut sayfalara sonradan eklenir): bu
-  // kademeden sitede kaç bilet satıldığı (pending+confirmed+checked_in
-  // sipariş adetleri toplamı — "left" hesabındaki aynı tanım). sold_elsewhere
-  // (dışarıdan satılanlar) BUNA dahil değil, ayrı kalır. Tek bir ArrayFormula:
-  // yeni bir kademe satırı eklendiğinde elle bir şey yapmana gerek yok,
-  // otomatik aşağı yayılır.
-  if (String(tiers.getRange(1, 8).getValue()) !== 'sold') {
-    tiers.getRange(1, 8).setValue('sold').setFontWeight('bold');
-    tiers.getRange(2, 8).setFormula(
-      '=ARRAYFORMULA(IF(A2:A="","",' +
-      'SUMIFS(Orders!H:H,Orders!C:C,A2:A,Orders!D:D,B2:B,Orders!K:K,"pending")+' +
-      'SUMIFS(Orders!H:H,Orders!C:C,A2:A,Orders!D:D,B2:B,Orders!K:K,"confirmed")+' +
-      'SUMIFS(Orders!H:H,Orders!C:C,A2:A,Orders!D:D,B2:B,Orders!K:K,"checked_in")))');
-  }
-
   // Statüye göre salt-okunur canlı görünümler: Orders TEK kaynak kalır
   // (tüm otomasyon oraya yazar), bu sekmeler yalnızca QUERY ile filtreler —
   // veri kopyalanmaz/taşınmaz, elle düzenlenemez, her zaman güncel.
@@ -112,9 +97,36 @@ function setup() {
   if (events.getLastRow() < 2) {
     events.appendRow(['sf-neck-sep19', 'YAZZ', '2026-09-19 20:00',
                       'Neck of the Woods · San Francisco', 100, 'active', '']);
-    tiers.appendRow(['sf-neck-sep19', 'early', 'Early Bird',        30.33, 20, 20]);
-    tiers.appendRow(['sf-neck-sep19', 'ga',    'General Admission', 35.99, 80, 0]);
-    tiers.appendRow(['sf-neck-sep19', 'final', 'Final Presale',     47.32, '', 0]);
+    // F ('sold') formül kolonu — aşağıda dolduruluyor, burada atlanır (appendRow
+    // ile tek dizi yazarsak F'ye de bir değer düşer ve formülün spill'ini bozar).
+    tiers.getRange(2, 1, 3, 5).setValues([
+      ['sf-neck-sep19', 'early', 'Early Bird',        30.33, 20],
+      ['sf-neck-sep19', 'ga',    'General Admission', 35.99, 80],
+      ['sf-neck-sep19', 'final', 'Final Presale',     47.32, ''],
+    ]);
+    tiers.getRange(2, 7, 3, 1).setValues([[20], [0], [0]]); // G = sold_elsewhere
+  }
+
+  // Tiers'a canlı "sold" kolonu, cap ile sold_elsewhere arasına (mevcut
+  // sayfalarda sold_elsewhere'den önce bir kolon açılıp kayması sağlanır):
+  // bu kademeden sitede kaç bilet satıldığı (pending+confirmed+checked_in
+  // sipariş adetleri toplamı — "left" hesabındaki aynı tanım). sold_elsewhere
+  // (dışarıdan satılanlar) BUNA dahil değil, ayrı kalır. Tek bir ArrayFormula:
+  // yeni bir kademe satırı eklendiğinde elle bir şey yapmana gerek yok,
+  // otomatik aşağı yayılır. Seed'den SONRA çalışır — F'nin (boş) sütun
+  // olduğundan emin olunca formülün spill'i engellenmez.
+  if (String(tiers.getRange(1, 6).getValue()) === 'sold_elsewhere') {
+    tiers.insertColumnBefore(6); // eski sayfa: sold_elsewhere F'den G'ye kayar
+  }
+  if (String(tiers.getRange(1, 6).getValue()) !== 'sold') {
+    tiers.getRange(1, 6).setValue('sold').setFontWeight('bold');
+  }
+  if (!tiers.getRange(2, 6).getFormula()) {
+    tiers.getRange(2, 6).setFormula(
+      '=ARRAYFORMULA(IF(A2:A="","",' +
+      'SUMIFS(Orders!H:H,Orders!C:C,A2:A,Orders!D:D,B2:B,Orders!K:K,"pending")+' +
+      'SUMIFS(Orders!H:H,Orders!C:C,A2:A,Orders!D:D,B2:B,Orders!K:K,"confirmed")+' +
+      'SUMIFS(Orders!H:H,Orders!C:C,A2:A,Orders!D:D,B2:B,Orders!K:K,"checked_in")))');
   }
 
   // Gizli anahtar (bir kez üretilir; bilet QR imzası için)
@@ -273,7 +285,7 @@ function tierLeftMap_() {
     var k = r[0] + '|' + r[1];
     var cap = r[4];
     if (cap === '' || cap === null) { map[k] = null; return; } // limitsiz
-    map[k] = Math.max(0, Number(cap) - Number(r[5] || 0) - (used[k] || 0));
+    map[k] = Math.max(0, Number(cap) - Number(r[6] || 0) - (used[k] || 0)); // r[6] = sold_elsewhere
   });
   return map;
 }
@@ -303,7 +315,7 @@ function catalogRev_() {
     .filter(function (r) { return String(r[5]) === 'active'; })
     .map(function (r) { return [String(r[0]), String(r[1]), dateStr_(r[2]), String(r[3]), String(r[6] || ''), String(r[7] || ''), String(r[8] || '')]; });
   var tiers = rows_('Tiers')
-    .map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]), String(r[6] || '')]; });
+    .map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]), String(r[7] || '')]; }); // r[7] = square_link
   var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify([evs, tiers]));
   return raw.map(function (b) { return ('0' + (b & 0xFF).toString(16)).slice(-2); }).join('').slice(0, 10);
 }
@@ -360,7 +372,7 @@ function getEvents_() {
     (tiersByEvent[r[0]] = tiersByEvent[r[0]] || []).push({
       id: String(r[1]), name: String(r[2]), price: Number(r[3]),
       left: leftMap[r[0] + '|' + r[1]],
-      square: String(r[6] || '').trim(), // Square Payment Link (doluysa kartla ödeme butonu çıkar)
+      square: String(r[7] || '').trim(), // Square Payment Link (doluysa kartla ödeme butonu çıkar)
     });
   });
   return rows_('Events')
