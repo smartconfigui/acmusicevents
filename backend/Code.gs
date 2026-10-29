@@ -46,6 +46,10 @@ function setup() {
 
   // date_time kolonunu düz metin yap (Sheets'in tarihe çevirmesini engelle)
   events.getRange('C:C').setNumberFormat('@');
+  // created_at için aynısı — Sheets bunu gerçek bir tarihe çevirirse
+  // expirePending() tarih ayrıştırmasında Invalid Date'e düşüyordu (bkz.
+  // parseCreatedAt_), eski pending'ler sonsuza kadar temizlenmeden kalıyordu.
+  orders.getRange('B:B').setNumberFormat('@');
 
   // Orders.status için açılır menü
   var rule = SpreadsheetApp.newDataValidation().requireValueInList(ORDER_STATUSES, true).build();
@@ -104,9 +108,11 @@ function setup() {
 
   // Tiers'a canlı "sold" kolonu, cap ile sold_elsewhere arasına (mevcut
   // sayfalarda sold_elsewhere'den önce bir kolon açılıp kayması sağlanır):
-  // bu kademeden sitede kaç bilet satıldığı (pending+confirmed+checked_in
-  // sipariş adetleri toplamı — "left" hesabındaki aynı tanım). sold_elsewhere
-  // (dışarıdan satılanlar) BUNA dahil değil, ayrı kalır.
+  // bu kademeden GERÇEKTEN satılan bilet sayısı (confirmed+checked_in).
+  // pending (henüz ödenmemiş/terk edilmiş denemeler) BİLEREK dahil değil —
+  // "left" (kalan kontenjan) hesabı hâlâ pending'i sayıyor, stok fazla
+  // satılmasın diye; ama "sold" bir satış/rapor rakamı, orada pending'in
+  // yeri yok. sold_elsewhere (dışarıdan satılanlar) da buna dahil değil.
   if (String(tiers.getRange(1, 6).getValue()) === 'sold_elsewhere') {
     tiers.insertColumnBefore(6); // eski sayfa: sold_elsewhere F'den G'ye kayar
   }
@@ -123,8 +129,7 @@ function setup() {
   if (tierLastRow >= 2) {
     var soldFormulas = [];
     for (var ti = 2; ti <= tierLastRow; ti++) {
-      soldFormulas.push(['=SUMIFS(Orders!H:H,Orders!C:C,A' + ti + ',Orders!D:D,B' + ti + ',Orders!K:K,"pending")' +
-                          '+SUMIFS(Orders!H:H,Orders!C:C,A' + ti + ',Orders!D:D,B' + ti + ',Orders!K:K,"confirmed")' +
+      soldFormulas.push(['=SUMIFS(Orders!H:H,Orders!C:C,A' + ti + ',Orders!D:D,B' + ti + ',Orders!K:K,"confirmed")' +
                           '+SUMIFS(Orders!H:H,Orders!C:C,A' + ti + ',Orders!D:D,B' + ti + ',Orders!K:K,"checked_in")']);
     }
     tiers.getRange(2, 6, soldFormulas.length, 1).setFormulas(soldFormulas);
@@ -739,11 +744,30 @@ function expirePending() {
   if (!sh || sh.getLastRow() < 2) return;
   var cutoff = Date.now() - PENDING_TTL_HOURS * 3600 * 1000;
   var data = sh.getRange(2, 1, sh.getLastRow() - 1, ORDERS_HEADERS.length).getValues();
+  var any = false;
   data.forEach(function (r, i) {
-    if (String(r[10]) === 'pending' && new Date(String(r[1]).replace(' ', 'T')).getTime() < cutoff) {
+    if (String(r[10]) !== 'pending') return;
+    var t = parseCreatedAt_(r[1]);
+    if (t !== null && t < cutoff) {
       sh.getRange(i + 2, 11).setValue('expired');
+      any = true;
     }
   });
+  if (any) bustCache_(); // kontenjan açıldı, önbellekleri hemen tazele
+}
+
+/** created_at hücresi bazen Sheets tarafından otomatik gerçek bir Date
+ *  değerine çevrilmiş olabilir (B sütunu date_time gibi düz metne
+ *  kilitlenmemiş) — String(dateObj).replace(' ','T') bu durumda çöp bir
+ *  metin üretip Invalid Date'e (NaN) düşüyordu; satır sonsuza kadar
+ *  pending kalıyordu. İkisini de (Date nesnesi ya da "yyyy-MM-dd HH:mm:ss"
+ *  metni) güvenle işler; ayrıştıramazsa null döner (satır atlanır, hata
+ *  fırlatılmaz). */
+function parseCreatedAt_(v) {
+  if (v instanceof Date) return v.getTime();
+  var m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6])).getTime();
 }
 
 /* ============================== KAPI GÖRÜNÜMÜ ============================== */
