@@ -97,36 +97,37 @@ function setup() {
   if (events.getLastRow() < 2) {
     events.appendRow(['sf-neck-sep19', 'YAZZ', '2026-09-19 20:00',
                       'Neck of the Woods · San Francisco', 100, 'active', '']);
-    // F ('sold') formül kolonu — aşağıda dolduruluyor, burada atlanır (appendRow
-    // ile tek dizi yazarsak F'ye de bir değer düşer ve formülün spill'ini bozar).
-    tiers.getRange(2, 1, 3, 5).setValues([
-      ['sf-neck-sep19', 'early', 'Early Bird',        30.33, 20],
-      ['sf-neck-sep19', 'ga',    'General Admission', 35.99, 80],
-      ['sf-neck-sep19', 'final', 'Final Presale',     47.32, ''],
-    ]);
-    tiers.getRange(2, 7, 3, 1).setValues([[20], [0], [0]]); // G = sold_elsewhere
+    tiers.appendRow(['sf-neck-sep19', 'early', 'Early Bird',        30.33, 20, '', 20]);
+    tiers.appendRow(['sf-neck-sep19', 'ga',    'General Admission', 35.99, 80, '', 0]);
+    tiers.appendRow(['sf-neck-sep19', 'final', 'Final Presale',     47.32, '', '', 0]);
   }
 
   // Tiers'a canlı "sold" kolonu, cap ile sold_elsewhere arasına (mevcut
   // sayfalarda sold_elsewhere'den önce bir kolon açılıp kayması sağlanır):
   // bu kademeden sitede kaç bilet satıldığı (pending+confirmed+checked_in
   // sipariş adetleri toplamı — "left" hesabındaki aynı tanım). sold_elsewhere
-  // (dışarıdan satılanlar) BUNA dahil değil, ayrı kalır. Tek bir ArrayFormula:
-  // yeni bir kademe satırı eklendiğinde elle bir şey yapmana gerek yok,
-  // otomatik aşağı yayılır. Seed'den SONRA çalışır — F'nin (boş) sütun
-  // olduğundan emin olunca formülün spill'i engellenmez.
+  // (dışarıdan satılanlar) BUNA dahil değil, ayrı kalır.
   if (String(tiers.getRange(1, 6).getValue()) === 'sold_elsewhere') {
     tiers.insertColumnBefore(6); // eski sayfa: sold_elsewhere F'den G'ye kayar
   }
   if (String(tiers.getRange(1, 6).getValue()) !== 'sold') {
     tiers.getRange(1, 6).setValue('sold').setFontWeight('bold');
   }
-  if (!tiers.getRange(2, 6).getFormula()) {
-    tiers.getRange(2, 6).setFormula(
-      '=ARRAYFORMULA(IF(A2:A="","",' +
-      'SUMIFS(Orders!H:H,Orders!C:C,A2:A,Orders!D:D,B2:B,Orders!K:K,"pending")+' +
-      'SUMIFS(Orders!H:H,Orders!C:C,A2:A,Orders!D:D,B2:B,Orders!K:K,"confirmed")+' +
-      'SUMIFS(Orders!H:H,Orders!C:C,A2:A,Orders!D:D,B2:B,Orders!K:K,"checked_in")))');
+  // TEK bir ArrayFormula yerine HER satıra kendi bağımsız formülü yazılır:
+  // bir tek ArrayFormula, altındaki satırlardan BİRİNDE bile eski/bozuk bir
+  // değer varsa TÜMÜYLE spill etmeyi reddediyordu (sessizce — hata da
+  // göstermiyor). Satır başına formül bundan bağışık; setup() her
+  // çalıştığında yeniden yazılır (formül deterministik, zararsız) — yeni
+  // kademe satırı ekleyince de setup()'ı tekrar çalıştırmak günceller.
+  var tierLastRow = tiers.getLastRow();
+  if (tierLastRow >= 2) {
+    var soldFormulas = [];
+    for (var ti = 2; ti <= tierLastRow; ti++) {
+      soldFormulas.push(['=SUMIFS(Orders!H:H,Orders!C:C,A' + ti + ',Orders!D:D,B' + ti + ',Orders!K:K,"pending")' +
+                          '+SUMIFS(Orders!H:H,Orders!C:C,A' + ti + ',Orders!D:D,B' + ti + ',Orders!K:K,"confirmed")' +
+                          '+SUMIFS(Orders!H:H,Orders!C:C,A' + ti + ',Orders!D:D,B' + ti + ',Orders!K:K,"checked_in")']);
+    }
+    tiers.getRange(2, 6, soldFormulas.length, 1).setFormulas(soldFormulas);
   }
 
   // Gizli anahtar (bir kez üretilir; bilet QR imzası için)
